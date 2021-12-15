@@ -37,7 +37,7 @@ ImapRecords ==
    folder: Folders]
 
 TypeOK ==
-  /\ Storage \in [Folders -> SUBSET [uid : Nat, messageId : MessageIds]]
+  /\ Storage \in [Folders -> SUBSET [uid : Nat, messageId : MessageIds, seen: BOOLEAN]]
   /\ \A f \in Folders : \A m1, m2 \in Storage[f] : m1 /= m2 => m1.uid /= m2.uid \* UIDs in each folder are unique.
   /\ UidNext \in [Folders -> Nat \ {0}]
   /\ ExpectedUid \in [Devices -> [Folders -> Nat]]
@@ -45,6 +45,14 @@ TypeOK ==
   /\ ReceivedMessages \in [Devices -> SUBSET [uid : Nat, messageId : MessageIds]]
   /\ ImapTable \in [Devices -> SUBSET ImapRecords]
 
+Init ==
+  /\ Storage = [f \in Folders |-> {}]
+  /\ UidNext = [f \in Folders |-> 1]
+  /\ ExpectedUid = [d \in Devices |-> [f \in Folders |-> 0]]
+  /\ SentMessages = MessageIds
+  /\ ReceivedMessages = [d \in Devices |-> {}]
+  /\ ImapTable = [d \in Devices |-> {}]
+  
 (* Server has not been changed. Sent messages are not part of the server state,
    but we include the set of sent messages because the only way it can change
    is by the message being delivered to the server *)
@@ -56,9 +64,12 @@ ServerUnchanged ==
 (* A message with Message-Id `m` arrives into the Inbox folder. *)
 MessageArrives(m) ==
   /\ m \in SentMessages \* This message has never arrived yet
-  /\ Storage' = [Storage EXCEPT !["inbox"] = Storage["inbox"] \union {[uid |-> UidNext["inbox"], messageId |-> m]}]
+  /\ Storage' = [Storage EXCEPT !["inbox"] = Storage["inbox"] \union
+                                {[uid |-> UidNext["inbox"],
+                                  messageId |-> m,
+                                  seen |-> FALSE]}]
   /\ UidNext' = [UidNext EXCEPT !["inbox"] = UidNext["inbox"] + 1]
-  /\ SentMessages' = { x \in SentMessages : x /= m }
+  /\ SentMessages' = SentMessages \ {m}
   /\ UNCHANGED <<ExpectedUid, ReceivedMessages, ImapTable>>
             
 (*
@@ -96,7 +107,8 @@ MoveMessageSuccess(d, inboxRecord) ==
     /\ r.uid = inboxRecord.uid \* The message actually exists in the Inbox folder.
     /\ Storage' = [Storage EXCEPT !["inbox"] = Storage["inbox"] \ {r}, \* Remove the message from the Inbox folder.
                                   !["movebox"] = Storage["movebox"] \union {[uid |-> UidNext["movebox"],
-                                                                             messageId |-> r.messageId]}]
+                                                                             messageId |-> r.messageId,
+                                                                             seen |-> r.seen]}]
     /\ UidNext' = [UidNext EXCEPT !["movebox"] = UidNext["movebox"] + 1]
     /\ ImapTable' = [ImapTable EXCEPT ![d] = (ImapTable[d] \union {[uid |-> 0, \* Unknown UID.
                                                                     messageId |-> inboxRecord.messageId,
@@ -114,7 +126,8 @@ CopyMessageSuccess(d, inboxRecord) ==
   \E r \in Storage["inbox"] :
     /\ r.uid = inboxRecord.uid
     /\ Storage' = [Storage EXCEPT !["movebox"] = Storage["movebox"] \union {[uid |-> UidNext["movebox"],
-                                                                             messageId |-> r.messageId]}]
+                                                                             messageId |-> r.messageId,
+                                                                             seen |-> r.seen]}]
     /\ UidNext' = [UidNext EXCEPT !["movebox"] = UidNext["movebox"] + 1]
     /\ ImapTable' = [ImapTable EXCEPT ![d] = ImapTable[d] \union {[uid |-> 0, \* Unknown UID.
                                                                    messageId |-> inboxRecord.messageId,
@@ -163,14 +176,6 @@ DeleteInboxMessage(d) ==
     /\ ImapTable' = [ImapTable EXCEPT ![d] = ImapTable[d] \ {inboxRecord}]
     /\ UNCHANGED <<UidNext, ExpectedUid, SentMessages, ReceivedMessages>>
 
-Init ==
-  /\ Storage = [f \in Folders |-> {}]
-  /\ UidNext = [f \in Folders |-> 1]
-  /\ ExpectedUid = [d \in Devices |-> [f \in Folders |-> 0]]
-  /\ SentMessages = MessageIds
-  /\ ReceivedMessages = [d \in Devices |-> {}]
-  /\ ImapTable = [d \in Devices |-> {}]
-
 Next ==
   \/ \E m \in MessageIds : MessageArrives(m)
   \/ \E d \in Devices :
@@ -187,8 +192,16 @@ ImapTableCorrect ==
   \A stored \in Storage[record.folder] :
   record.uid = stored.uid => record.messageId = stored.messageId
 
+(* An invariant stating that it is impossible to have both a dummy (UID 0) and non-dummy record for the same message in the same folder. *)
+ImapTableNoDummyRecords ==
+  \A device \in Devices :
+  \A messageId \in MessageIds :
+  \A folder \in Folders :
+    \/ \A r \in ImapTable[device] : (r.folder = folder /\ r.messageId = messageId) => r.uid > 0 \* All records are real.
+    \/ \A r \in ImapTable[device] : (r.folder = folder /\ r.messageId = messageId) => r.uid = 0 \* All records are fake.
+
 Spec == Init /\ [][Next]_<<Storage, UidNext, ExpectedUid, SentMessages, ReceivedMessages, ImapTable>>
 
-THEOREM Spec => [](TypeOK /\ ImapTableCorrect)
+THEOREM Spec => [](TypeOK /\ ImapTableCorrect /\ ImapTableNoDummyRecords)
 
 =============================================================================
