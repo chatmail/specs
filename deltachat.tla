@@ -1,6 +1,5 @@
 ----------------------------- MODULE deltachat -----------------------------
 
-
 (***************************************************************************)
 (* Model of a single IMAP server and multiple devices.                     *)
 (*                                                                         *)
@@ -51,6 +50,11 @@ TypeOK ==
   /\ SentMessages \subseteq MessageIds
   /\ ReceivedMessages \in [Devices -> SUBSET MessageIds]
   /\ ImapTable \in [Devices -> SUBSET ImapRecords]
+  /\ \A d \in Devices :
+     \A r1, r2 \in ImapTable[d] : \* Uniqueness constraint.
+     (r1.folder = r2.folder /\
+      r1.uid > 0 /\               \* Only for real UIDs.
+      r1.uid = r2.uid) => r1 = r2
 
 Init ==
   /\ Storage = [f \in Folders |-> {}]
