@@ -23,10 +23,6 @@ VARIABLES Storage, \* The set of messages in the folders
           ReceivedMessages,
           ImapTable \* Device view of the IMAP server state.
 
-(* Set of all possible messages on the IMAP server *)     
-Messages ==
-  [uid : Nat, messageId : MessageIds, seen: BOOLEAN]
-
 (* The server has two folders: Inbox and Movebox. *)
 Folders ==
   {"inbox", "movebox"}
