@@ -1,52 +1,17 @@
 ----------------------------- MODULE deltachat -----------------------------
 
 (*
-There is a server and there are multiple devices of the same user.
+Model of a single IMAP server and multiple devices.
 
-The server has two folders: Inbox and Movebox.
-Both folders have UID_NEXT property, which is the next UID assigned to the message dropped into this folder.
-We don't model UIDVALIDITY.
-
-To model both the case when the server support atomic MOVE operation
-and the case when it doesn't, 
-we will allow the devices to execute any of the two operations:
-1. MOVE the message to the Move folder atomically.
-2. COPY the message to the Move folder and schedule DELETE operation on the Inbox.
-
-We want to check the following properties:
-1. All the devices eventually become aware of all the messages arriving into the Inbox folder.
-2. All the messages are eventually in the Move folder.
-3. Eventually there are no messages in the Inbox folder.
-4. Eventually device IMAP table represents the IMAP server state exactly.
-
-IMAP table is a new solution proposed in https://github.com/deltachat/deltachat-core-rust/issues/1334
-
-We assume that all devices want to move messages to the Movebox.
-If no devices want to move messages to Movebox, things are simple, because devices only fetch the messages.
-However, if some devices move the messages, while other devices don't,
-the devices which have seen some message in the inbox and then seen them in the movebox
-will never learn that the message was removed from the inbox.
-This can also happen if some device deletes the message (does not matter whether it happens in the inbox or movebox)
-while other devices never learn that it is deleted because they never attempt any actions against it.
-
-TODO:
-1. Model the case when the message may arrive multiple times.
-   Maybe just don't delete the messages from the set of sent messages
-   when they are delivered?
-2. Model the seen state.
-3. Model UIDVALIDITY reset at arbitrary times.
-4. Model reception of message deletion and flags changes when device is offline?
-   Deletion: https://github.com/deltachat/deltachat-core-rust/issues/1332
-   Maybe not needed, because it can randomly fail when we are offline, so it cannot be relied on anyway.
+Devices fetch the messages and move them from the Inbox folder to Movebox folder on the server.
 *)
 
 \* We need naturals for UIDs.
 EXTENDS Naturals
 
 (*
- * Running for more than two devices or messages is really slow.
- * If you want to test it, consider disabling copying of the messages and only modelling atomic MOVE,
- * although it is less interesting.
+ * Running for more than two devices or messages is really slow
+ * if copying is allowed.
  *)
 CONSTANT Devices, \* Symmetry set of devices {d1, d2}
          MessageIds \* Symmetry set of Message-IDs {m1, m2}
@@ -62,6 +27,7 @@ VARIABLES Storage, \* The set of messages in the folders
 Messages ==
   [uid : Nat, messageId : MessageIds, seen: BOOLEAN]
 
+(* The server has two folders: Inbox and Movebox. *)
 Folders ==
   {"inbox", "movebox"}
 
@@ -91,7 +57,7 @@ ServerUnchanged ==
               UidNext,
               SentMessages>>
 
-\* A message with Message-Id m arrives into the Inbox folder.
+(* A message with Message-Id `m` arrives into the Inbox folder. *)
 MessageArrives(m) ==
   /\ m \in SentMessages \* This message has never arrived yet
   /\ Storage' = [Storage EXCEPT !["inbox"] = Storage["inbox"] \union {[uid |-> UidNext["inbox"], messageId |-> m]}]
@@ -176,7 +142,7 @@ MoveMessageFailure(d, inboxRecord) ==
 MoveMessage(d) ==
   \E inboxRecord \in ImapTable[d] :
     /\ inboxRecord.folder = "inbox" \* Device knows about a message in the Inbox.
-    /\ inboxRecord.uid > 0 \* This is not a dummy record (although there should never be one for the Inbox.
+    /\ inboxRecord.uid > 0 \* This is not a dummy record (although there should never be one for the Inbox).
     /\ \A r \in ImapTable[d] :
        r.folder = "movebox" => r.messageId /= inboxRecord.messageId \* Device does not know about any copy of this message in the Movebox.
     /\ 
@@ -224,5 +190,9 @@ ImapTableCorrect ==
   \A record \in ImapTable[device] :
   \A stored \in Storage[record.folder] :
   record.uid = stored.uid => record.messageId = stored.messageId
+
+Spec == Init /\ [][Next]_<<Storage, UidNext, ExpectedUid, SentMessages, ReceivedMessages, ImapTable>>
+
+THEOREM Spec => [](TypeOK /\ ImapTableCorrect)
 
 =============================================================================

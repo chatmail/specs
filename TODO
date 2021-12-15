@@ -1,0 +1,8 @@
+1. Model the case when the message may arrive multiple times.
+   Maybe just don't delete the messages from the set of sent messages
+   when they are delivered?
+2. Model the seen state.
+3. Model UIDVALIDITY reset at arbitrary times.
+4. Model reception of message deletion and flags changes when device is offline?
+   Deletion: https://github.com/deltachat/deltachat-core-rust/issues/1332
+   Maybe not needed, because it can randomly fail when we are offline, so it cannot be relied on anyway.
