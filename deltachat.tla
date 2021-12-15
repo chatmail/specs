@@ -82,17 +82,24 @@ and updates the last seen UID to the UID next.
 The device gets no information about whether the messages it fetched previously are deleted.
 *)
 
-(* Device d fetches the messages from the f folder *)
+(* Device d fetches the messages from the f folder. *)
 FetchFolder(d, f) ==
   /\ \A d2 \in Devices : ExpectedUid[d][f] <= UidNext[f]
   /\ ExpectedUid' = [ExpectedUid EXCEPT ![d][f] = UidNext[f]]
   /\ UNCHANGED ReceivedMessages \* FIXME
   /\ ServerUnchanged
-  /\ ImapTable' = [ImapTable EXCEPT ![d] = ImapTable[d] \union
-       LET NewMessages == {x \in Storage[f] : x.uid >= ExpectedUid[d][f]}
-       IN {[uid |-> r.uid,
-            messageId |-> r.messageId,
-            folder |-> f] : r \in NewMessages }]
+  /\ LET
+       NewMessages == {x \in Storage[f] : x.uid >= ExpectedUid[d][f]}
+       OldDummyRecords ==
+         { r \in ImapTable[d] :
+           /\ r.folder = f
+           /\ \E x \in NewMessages : r.messageId = x.messageId
+           /\ r.uid = 0 }
+     IN ImapTable' = [ImapTable EXCEPT ![d] =
+        (ImapTable[d] \ OldDummyRecords)
+        \union {[uid |-> r.uid,
+                 messageId |-> r.messageId,
+                 folder |-> f] : r \in NewMessages }]
             
 (* Device `d` successfully moves the message with UID `uid` from the Inbox to the Movebox.
    Note that there is no check that the message being moved has the Message-ID that the device
