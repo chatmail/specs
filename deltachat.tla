@@ -89,10 +89,10 @@ FetchFolder(d, f) ==
   /\ UNCHANGED ReceivedMessages \* FIXME
   /\ ServerUnchanged
   /\ ImapTable' = [ImapTable EXCEPT ![d] = ImapTable[d] \union
-       LET NewMessages == {x \in Storage["inbox"] : x.uid >= ExpectedUid[d]["inbox"]}
+       LET NewMessages == {x \in Storage[f] : x.uid >= ExpectedUid[d][f]}
        IN {[uid |-> r.uid,
             messageId |-> r.messageId,
-            folder |-> "inbox"] : r \in NewMessages }]
+            folder |-> f] : r \in NewMessages }]
             
 (* Device `d` successfully moves the message with UID `uid` from the Inbox to the Movebox.
    Note that there is no check that the message being moved has the Message-ID that the device
