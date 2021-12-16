@@ -306,7 +306,7 @@ THEOREM Spec => []ImapTableCorrect
    This property implies that devices are partially ordered by
    their received message sets.
  *)
-NoReordering ==
+WeakNoReordering ==
   \A device1 \in Devices :
   \A device2 \in Devices :
   LET
@@ -317,7 +317,15 @@ NoReordering ==
   IN
     (l1 <= l2) => (s1 = SubSeq(s2, 1, l1))
 
-THEOREM Spec => []NoReordering
+THEOREM Spec => []WeakNoReordering
+
+\* FIXME this is violated
+StrongNoReordering ==
+  \A device \in Devices :
+  ReceivedMessages[device] =
+  SubSeq(InitSentMessages, 1, Len(ReceivedMessages[device]))
+  
+THEOREM Spec => []StrongNoReordering
 
 (* If there is a record for message in the Movebox,
    then it should be scheduled for deletion in the Inbox. *)
@@ -333,7 +341,10 @@ InboxMessagesScheduledForDeletionInvariant ==
 THEOREM Spec => []InboxMessagesScheduledForDeletionInvariant
 
 AllMessagesDownloaded ==
-  \A d \in Devices : ReceivedMessages[d] = MessageIds
+  \A i \in 1..Len(InitSentMessages) :
+  \A d \in Devices :
+  \E j \in 1..Len(ReceivedMessages[d]) :
+  ReceivedMessages[d][j] = InitSentMessages[i]
 
 (* All messages are downloaded eventually.
 We also check that all messages are eventually always downloaded,
