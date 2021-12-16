@@ -36,15 +36,16 @@ StorageRecords ==
    if the message was seen both in the Inbox and Movebox. *)
 ImapRecords ==
   [messageId: MessageIds,
-   uid: Nat, \* Special value of 0 indicates that UID is unknown.
-   folder: Folders]
+   uid: Nat \ {0},
+   folder: Folders,
+   delete: BOOLEAN] \* Whether the message must be deleted.
 
 ----------------------------------------------------------------------------
 
 TypeOK ==
   /\ Storage \in [Folders -> SUBSET StorageRecords]
   /\ \A f \in Folders : \* UIDs in each folder are unique.
-     \A m1, m2 \in Storage[f] : m1 /= m2 => m1.uid /= m2.uid 
+     \A m1, m2 \in Storage[f] : m1 /= m2 => m1.uid /= m2.uid
   /\ UidNext \in [Folders -> Nat \ {0}]
   /\ ExpectedUid \in [Devices -> [Folders -> Nat]]
   /\ SentMessages \subseteq MessageIds
@@ -52,9 +53,7 @@ TypeOK ==
   /\ ImapTable \in [Devices -> SUBSET ImapRecords]
   /\ \A d \in Devices :
      \A r1, r2 \in ImapTable[d] : \* Uniqueness constraint.
-     (r1.folder = r2.folder /\
-      r1.uid > 0 /\               \* Only for real UIDs.
-      r1.uid = r2.uid) => r1 = r2
+     (r1.folder = r2.folder /\ r1.uid = r2.uid) => r1 = r2
 
 Init ==
   /\ Storage = [f \in Folders |-> {}]
@@ -86,7 +85,7 @@ MessageArrives(m) ==
   /\ UidNext' = [UidNext EXCEPT !["inbox"] = UidNext["inbox"] + 1]
   /\ SentMessages' = SentMessages \ {m}
   /\ UNCHANGED <<ExpectedUid, ReceivedMessages, ImapTable>>
-            
+
 (* Each device may FETCH from the folder at any time.
 This includes the case when the device always fetches at the right time,
 so we don't need to model the IDLE protocol.
@@ -96,31 +95,35 @@ and updates the last seen UID to the UID next.
 The device gets no information about whether the messages it fetched previously are deleted.
 *)
 
-(* Device d fetches the messages from the f folder. *)
+(* Device d fetches the messages from the f folder.
+   Duplicate messages are marked for deletion.
+   TODO: mark message in Inbox for deletion if there is a copy in the Movebox already.
+ *)
 FetchFolder(d, f) ==
   LET
     NewMessages == {x \in Storage[f] : x.uid >= ExpectedUid[d][f]}
-    OldDummyRecords ==
-      { r \in ImapTable[d] :
-        /\ r.folder = f
-        /\ \E x \in NewMessages : r.messageId = x.messageId
-        /\ r.uid = 0 }
   IN
   /\ ExpectedUid' = [ExpectedUid EXCEPT ![d][f] = UidNext[f]]
   /\ UNCHANGED ReceivedMessages
   /\ ServerUnchanged
   /\ ImapTable' = [ImapTable EXCEPT ![d] =
-        (ImapTable[d] \ OldDummyRecords)
-        \union {[uid |-> r.uid,
-                 messageId |-> r.messageId,
-                 folder |-> f] : r \in NewMessages }]
-                 
+       ImapTable[d] \union
+         {[uid |-> r.uid,
+           messageId |-> r.messageId,
+           folder |-> f,
+           delete |-> \/ \E x \in ImapTable[d] : x.folder = f /\
+                                                 x.messageId = r.messageId /\
+                                                 x.delete = FALSE
+                      \/ \E x \in NewMessages : x.uid < r.uid /\
+                                                x.messageId = r.messageId
+           ] : r \in NewMessages }]
+
 (* Fetch message contents. *)
+\* TODO: replace with downloading of a single message with minimal UID that is not downloaded yet.
 PullFolder(d, f) ==
   LET
     RequestedRecords ==
-      {r \in ImapTable[d] : /\ r.uid > 0
-                            /\ r.folder = f
+      {r \in ImapTable[d] : /\ r.folder = f
                             /\ (r.messageId \notin ReceivedMessages[d]) }
     RequestedUids == {r.uid : r \in RequestedRecords}
     PulledMessages == {x \in Storage[f] : x.uid \in RequestedUids}
@@ -130,16 +133,13 @@ PullFolder(d, f) ==
   /\ UNCHANGED <<ImapTable, ExpectedUid>>
   /\ ReceivedMessages' =
        [ReceivedMessages EXCEPT ![d] = ReceivedMessages[d] \union PulledMessageIds]
-            
+
 (* Device `d' successfully moves the message with UID `uid' from the Inbox to the Movebox.
    Note that there is no check that the message being moved has the Message-ID that the device
    thinks is stored under this UID. If ImapTable is incorrect, it is possible
    to successfully move the wrong message.
-   
-   Device does not know the UID of the moved message, but creates a dummy record
-   anyway to avoid moving another copy of the message from the Inbox if it exists for some reason.
-   
-   After moving, UIDs are assumed to be unknown.
+
+   After moving, UIDs are assumed to be unknown, so no record is added.
    IMAP4rev2 (RFC 9051) supports COPYUID, but we assume IMAP4rev1 (RFC 3501) here. *)
 MoveMessageSuccess(d, inboxRecord) ==
   \E r \in Storage["inbox"] :
@@ -151,42 +151,32 @@ MoveMessageSuccess(d, inboxRecord) ==
                              messageId |-> r.messageId,
                              seen |-> r.seen]}]
     /\ UidNext' = [UidNext EXCEPT !["movebox"] = UidNext["movebox"] + 1]
-    /\ LET NewRecord == [uid |-> 0, \* Unknown UID.
-                         messageId |-> inboxRecord.messageId,
-                         folder |-> "movebox"]
-       IN
-         ImapTable' =
-           [ImapTable EXCEPT ![d] = (ImapTable[d] \union {NewRecord}) \ {inboxRecord}]
+    /\ ImapTable' = [ImapTable EXCEPT ![d] = ImapTable[d] \ {inboxRecord}]
     /\ UNCHANGED <<ExpectedUid, SentMessages, ReceivedMessages>>
 
-(* Device `d' successfully copies the message from the Inbox to Movebox.
- This happens when the server does not support atomic MOVE,
- so the device has to resort to copying the message and then deleting remaining copy from the Inbox.
- 
-It is especially important to create a dummy record here to make sure we don't keep
-copying this message until we fetch from the Movebox and learn about the copy.
+(* Device `d' on the server that does not support MOVE
+   emulates the MOVE by doing COPY and scheduling the
+   message for deletion.
  *)
-CopyMessageSuccess(d, inboxRecord) ==
+CopyMessage(d, inboxRecord) ==
   \E r \in Storage["inbox"] :
     /\ r.uid = inboxRecord.uid
     /\ Storage' =
          [Storage EXCEPT !["movebox"] = Storage["movebox"] \union
                            {[uid |-> UidNext["movebox"],
                              messageId |-> r.messageId,
-                             seen |-> r.seen]}]
+                             seen |-> r.seen]} ]
     /\ UidNext' = [UidNext EXCEPT !["movebox"] = UidNext["movebox"] + 1]
-    /\ ImapTable' = [ImapTable EXCEPT ![d] =
-                       ImapTable[d] \union {[uid |-> 0, \* Unknown UID.
-                                             messageId |-> inboxRecord.messageId,
-                                             folder |-> "movebox"]}]
+    /\ ImapTable' = [ImapTable EXCEPT ![d] = (ImapTable[d] \ {inboxRecord}) \union
+         {[inboxRecord EXCEPT !.delete = TRUE]}]
     /\ UNCHANGED <<ExpectedUid, SentMessages, ReceivedMessages>>
-  
+
 (* Device `d' tries to move or copy the message that does not exist on the server
    and learns that the message does not exist,
    therefore removes the invalid record from its database.
-   
+
    Copy failure is not modelled separately as it is indistinguishable
-   from the move failure. 
+   from the move failure.
  *)
 MoveMessageFailure(d, inboxRecord) ==
   /\ \A r \in Storage["inbox"] : r.uid /= inboxRecord.uid \* There is no such UID in the Inbox folder.
@@ -199,21 +189,16 @@ MoveMessageFailure(d, inboxRecord) ==
 MoveMessage(d) ==
   \E inboxRecord \in ImapTable[d] :
     /\ inboxRecord.folder = "inbox" \* Device knows about a message in the Inbox.
-    /\ inboxRecord.uid > 0 \* This is not a dummy record (although there should never be one for the Inbox).
+    /\ inboxRecord.delete = FALSE \* This message is not scheduled for deletion.
     /\ \A r \in ImapTable[d] : \* Device does not know about any copy of this message in the Movebox.
        r.folder = "movebox" => r.messageId /= inboxRecord.messageId
-    /\ 
+    /\
       \/ MoveMessageSuccess(d, inboxRecord)
-      \/ CopyMessageSuccess(d, inboxRecord)
+      \/ CopyMessage(d, inboxRecord)
       \/ MoveMessageFailure(d, inboxRecord)
 
-(* Device `d' attempts to delete a message from the Inbox for which it believes a copy exists in the Movebox.
-   Note that there is no check that the message deleted has the correct Message-ID,
-   the device assumes that its knowledge of Message-ID to UID correspondence is correct
-   and deletes by UID without checking.
-   Regardless of whether the message is deleted on the server or there was no message with such UID,
-   device deletes its record about this message.
- *)
+(* Device `d' attempts to delete a message from the Inbox for which it believes a copy exists in the Movebox. *)
+\* TODO: test instead that all such messages are scheduled for deletion at any time.
 DeleteInboxMessage(d) ==
   \E inboxRecord \in ImapTable[d] :
   \E moveboxRecord \in ImapTable[d] :
@@ -225,6 +210,22 @@ DeleteInboxMessage(d) ==
     /\ ImapTable' = [ImapTable EXCEPT ![d] = ImapTable[d] \ {inboxRecord}]
     /\ UNCHANGED <<UidNext, ExpectedUid, SentMessages, ReceivedMessages>>
 
+(* Device `d' attempts to delete a message scheduled for deletion.
+
+   Note that there is no check that the message deleted has the correct Message-ID,
+   the device assumes that its knowledge of Message-ID to UID correspondence is correct
+   and deletes by UID without checking.
+   Regardless of whether the message is deleted on the server or there was no message with such UID,
+   device deletes its record about this message.
+   *)
+DeleteMessage(d) ==
+  \E record \in ImapTable[d] :
+    /\ record.delete = TRUE
+    /\ Storage' =
+         [Storage EXCEPT ![record.folder] = {r \in Storage[record.folder] : r.uid /= record.uid}]
+    /\ ImapTable' = [ImapTable EXCEPT ![d] = ImapTable[d] \ {record}]
+    /\ UNCHANGED <<UidNext, ExpectedUid, SentMessages, ReceivedMessages>>
+
 Next ==
   \/ \E m \in MessageIds : MessageArrives(m)
   \/ \E d \in Devices :
@@ -232,7 +233,8 @@ Next ==
        \/ PullFolder(d, "movebox") \* Pull only from Movebox to prevent reordering.
        \/ MoveMessage(d)
        \/ DeleteInboxMessage(d)
-  
+       \/ DeleteMessage(d)
+
 ----------------------------------------------------------------------------
 
 (* An invariant stating that if some device has a record about some message on the IMAP server,
@@ -244,24 +246,13 @@ ImapTableCorrect ==
   \A stored \in Storage[record.folder] :
   record.uid = stored.uid => record.messageId = stored.messageId
 
-(* An invariant stating that it is impossible to have both a dummy (UID 0)
-   and non-dummy record for the same message in the same folder. *)
-ImapTableNoDummyRecords ==
-  \A device \in Devices :
-  \A messageId \in MessageIds :
-  \A folder \in Folders :
-    \/ \A r \in ImapTable[device] : \* All records are real.
-         (r.folder = folder /\ r.messageId = messageId) => r.uid > 0
-    \/ \A r \in ImapTable[device] : \* All records are dummy.
-         (r.folder = folder /\ r.messageId = messageId) => r.uid = 0
- 
 (* The order of message reception is the same for every device.
    This is a weak "no reordering" property, the messages may still be reordered
    compared to the order of delivery to the Inbox, but they have to be
    reordered the same way for every device.
-   
+
    This is achieved by only pulling from the Movebox.
-   
+
    This property implies that devices are partially ordered by
    their received message sets.
  *)
@@ -280,7 +271,6 @@ Spec == Init /\ [][Next]_<<Storage,
 
 THEOREM Spec => [](TypeOK /\
                    ImapTableCorrect /\
-                   ImapTableNoDummyRecords /\
                    NoReordering)
 
 =============================================================================
