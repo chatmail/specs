@@ -7,12 +7,16 @@
 (* the Movebox folder on the server.                                       *)
 (***************************************************************************)
 
-EXTENDS Naturals \* We need naturals for `^UIDs.^'
+EXTENDS Naturals, (* We need naturals for `^UIDs.^' *)
+        Sequences (* Sequences of Message-IDs scheduled for delivery. *)
 
-\* Running for more than two devices or messages is really slow.
-CONSTANT Devices, \* Symmetry set of devices such as `{d1, d2}'.
-         MessageIds \* Symmetry set of Message-IDs such as `{m1, m2}'.
-
+CONSTANT Devices, (* Symmetry set of devices such as `{d1, d2}'. *)
+         MessageIds, (* Symmetry set of Message-IDs such as `{m1, m2}'. *)
+         InitSentMessages (*************************************************)
+                          (* Sequence of Message-IDs in the order of       *)
+                          (* delivery, such as <<m1, m1, m2, m1>>          *)
+                          (*************************************************)
+         
 VARIABLES Storage, \* The set of messages in the server folders.
           UidNext, \* `^UID^' that will be assigned to the next message in a folder.
           LastSeenUid, \* Function from folder to the next expected `^UID.^'
@@ -20,7 +24,7 @@ VARIABLES Storage, \* The set of messages in the server folders.
                        (* The set of Message-IDs that have been sent and   *)
                        (* may eventually arrive into the Inbox.            *)
                        (****************************************************)
-          ReceivedMessages, \* The set of Message-IDs downloaded by the devices.
+          ReceivedMessages, \* Sequences of Message-IDs downloaded by the devices.
           ImapTable \* Device view of the IMAP server state.
 
 vars == <<Storage, UidNext, LastSeenUid, SentMessages, ReceivedMessages, ImapTable>>
@@ -50,8 +54,8 @@ TypeOK ==
      \A m1, m2 \in Storage[f] : m1 /= m2 => m1.uid /= m2.uid
   /\ UidNext \in [Folders -> Nat \ {0}]
   /\ LastSeenUid \in [Devices -> [Folders -> Nat]]
-  /\ SentMessages \subseteq MessageIds
-  /\ ReceivedMessages \in [Devices -> SUBSET MessageIds]
+  /\ SentMessages \in Seq(MessageIds)
+  /\ ReceivedMessages \in [Devices -> Seq(MessageIds)]
   /\ ImapTable \in [Devices -> SUBSET ImapRecords]
   /\ \A d \in Devices :
      \A r1, r2 \in ImapTable[d] : \* Uniqueness constraint.
@@ -61,8 +65,8 @@ Init ==
   /\ Storage = [f \in Folders |-> {}]
   /\ UidNext = [f \in Folders |-> 1]
   /\ LastSeenUid = [d \in Devices |-> [f \in Folders |-> 0]]
-  /\ SentMessages = MessageIds
-  /\ ReceivedMessages = [d \in Devices |-> {}]
+  /\ SentMessages = InitSentMessages
+  /\ ReceivedMessages = [d \in Devices |-> <<>>]
   /\ ImapTable = [d \in Devices |-> {}]
 
 ----------------------------------------------------------------------------
@@ -81,12 +85,12 @@ ServerUnchanged ==
 
 (* A message with Message-ID `m' arrives into the Inbox folder. *)
 MessageArrives(m) ==
-  /\ m \in SentMessages \* This message has never arrived yet.
+  /\ SentMessages /= <<>>
   /\ Storage' = [Storage EXCEPT !["inbox"] = Storage["inbox"] \union
                                 {[uid |-> UidNext["inbox"],
-                                  messageId |-> m]}]
+                                  messageId |-> Head(SentMessages)]}]
   /\ UidNext' = [UidNext EXCEPT !["inbox"] = UidNext["inbox"] + 1]
-  /\ SentMessages' = SentMessages \ {m}
+  /\ SentMessages' = Tail(SentMessages)
   /\ UNCHANGED <<LastSeenUid, ReceivedMessages, ImapTable>>
 
 ----------------------------------------------------------------------------
@@ -145,7 +149,7 @@ DownloadMessageSuccess(d, imapRecord) ==
   /\ storageRecord.uid = imapRecord.uid
   /\ ReceivedMessages' =
        [ReceivedMessages EXCEPT ![d] =
-        ReceivedMessages[d] \union {storageRecord.messageId}]
+        Append(ReceivedMessages[d], storageRecord.messageId)]
   /\ ServerUnchanged
   /\ UNCHANGED <<LastSeenUid, ImapTable>>
 
@@ -163,7 +167,7 @@ DownloadMessageFailure(d, imapRecord) ==
 ShouldDownload(d, imapRecord) ==
   /\ imapRecord.folder = "movebox" \* Only download from the movebox to avoid reordering.
   /\ ~imapRecord.delete
-  /\ imapRecord.messageId \notin ReceivedMessages[d]
+  /\ \A i \in 1..Len(ReceivedMessages[d]) : imapRecord.messageId /= ReceivedMessages[d][i]
 
 DownloadMessage(d) ==
   \E imapRecord \in ImapTable[d] :
@@ -305,8 +309,13 @@ THEOREM Spec => []ImapTableCorrect
 NoReordering ==
   \A device1 \in Devices :
   \A device2 \in Devices :
-  \/ ReceivedMessages[device1] \subseteq ReceivedMessages[device2]
-  \/ ReceivedMessages[device2] \subseteq ReceivedMessages[device1]
+  LET
+    s1 == ReceivedMessages[device1]
+    s2 == ReceivedMessages[device2]
+    l1 == Len(s1)
+    l2 == Len(s2)
+  IN
+    (l1 <= l2) => (s1 = SubSeq(s2, 1, l1))
 
 THEOREM Spec => []NoReordering
 
