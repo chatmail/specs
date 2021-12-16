@@ -29,7 +29,7 @@ Folders ==
 
 (* The set of possible records on the server. *)
 StorageRecords ==
-  [uid : Nat \ {0}, messageId : MessageIds, seen: BOOLEAN]
+  [uid : Nat \ {0}, messageId : MessageIds]
 
 (* The set of possible records in the relational database on the device.
    Note that there may be multiple records for the same Message-ID
@@ -65,9 +65,11 @@ Init ==
 
 ----------------------------------------------------------------------------
 
-(* Server has not been changed. Sent messages are not part of the server state,
-   but we include the set of sent messages because the only way it can change
-   is by the message being delivered to the server *)
+(***************************************************************************)
+(* Server has not been changed.  Sent messages are not part of the server  *)
+(* state, but we include the set of sent messages because the only way it  *)
+(* can change is by the message being delivered to the server              *)
+(***************************************************************************)
 ServerUnchanged ==
   UNCHANGED <<Storage,
               UidNext,
@@ -80,20 +82,28 @@ MessageArrives(m) ==
   /\ m \in SentMessages \* This message has never arrived yet.
   /\ Storage' = [Storage EXCEPT !["inbox"] = Storage["inbox"] \union
                                 {[uid |-> UidNext["inbox"],
-                                  messageId |-> m,
-                                  seen |-> FALSE]}]
+                                  messageId |-> m]}]
   /\ UidNext' = [UidNext EXCEPT !["inbox"] = UidNext["inbox"] + 1]
   /\ SentMessages' = SentMessages \ {m}
   /\ UNCHANGED <<ExpectedUid, ReceivedMessages, ImapTable>>
 
-(* Each device may FETCH from the folder at any time.
-This includes the case when the device always fetches at the right time,
-so we don't need to model the IDLE protocol.
-We also don't model separate FETCH request and response.
-Instead, FETCH operation makes the device aware of all the new messages since the last seen UID
-and updates the last seen UID to the UID next.
-The device gets no information about whether the messages it fetched previously are deleted.
-*)
+----------------------------------------------------------------------------
+
+(***************************************************************************)
+(* Devices fetch, move and delete messages.  These actions can be batched, *)
+(* but we consider all possible orders of them and consider an action on a *)
+(* single message at any time.                                             *)
+(***************************************************************************)
+
+(***************************************************************************)
+(* Each device may FETCH from the folder at any time.  This includes       *)
+(* the case when the device always fetches at the right time, so we don't  *)
+(* need to model the IDLE protocol.  We also don't model separate FETCH    *)
+(* request and response.  Instead, FETCH operation makes the device aware  *)
+(* of all the new messages since the last seen UID and updates the last    *)
+(* seen UID to the UID next.  The device gets no information about whether *)
+(* the messages it fetched previously are deleted.                         *)
+(***************************************************************************)
 
 (* Device d fetches the messages from the f folder.
    Duplicate messages are marked for deletion.
@@ -104,35 +114,52 @@ FetchFolder(d, f) ==
     NewMessages == {x \in Storage[f] : x.uid >= ExpectedUid[d][f]}
   IN
   /\ ExpectedUid' = [ExpectedUid EXCEPT ![d][f] = UidNext[f]]
-  /\ UNCHANGED ReceivedMessages
-  /\ ServerUnchanged
+  /\ UNCHANGED <<Storage, UidNext, SentMessages, ReceivedMessages>>
   /\ ImapTable' = [ImapTable EXCEPT ![d] =
        ImapTable[d] \union
          {[uid |-> r.uid,
            messageId |-> r.messageId,
            folder |-> f,
-           delete |-> \/ \E x \in ImapTable[d] : x.folder = f /\
+           delete |-> \/ \E x \in ImapTable[d] : x.folder = r.folder /\
                                                  x.messageId = r.messageId /\
                                                  x.delete = FALSE
                       \/ \E x \in NewMessages : x.uid < r.uid /\
                                                 x.messageId = r.messageId
            ] : r \in NewMessages }]
-
-(* Fetch message contents. *)
-\* TODO: replace with downloading of a single message with minimal UID that is not downloaded yet.
-PullFolder(d, f) ==
-  LET
-    RequestedRecords ==
-      {r \in ImapTable[d] : /\ r.folder = f
-                            /\ (r.messageId \notin ReceivedMessages[d]) }
-    RequestedUids == {r.uid : r \in RequestedRecords}
-    PulledMessages == {x \in Storage[f] : x.uid \in RequestedUids}
-    PulledMessageIds == {x.messageId : x \in PulledMessages}
-  IN
-  /\ ServerUnchanged
-  /\ UNCHANGED <<ImapTable, ExpectedUid>>
+           
+DownloadMessageSuccess(d, imapRecord) ==
+  \E storageRecord \in Storage[imapRecord.folder] :
+  /\ storageRecord.uid = imapRecord.uid
   /\ ReceivedMessages' =
-       [ReceivedMessages EXCEPT ![d] = ReceivedMessages[d] \union PulledMessageIds]
+       [ReceivedMessages EXCEPT ![d] =
+        ReceivedMessages[d] \union {storageRecord.messageId}]
+  /\ ServerUnchanged
+  /\ UNCHANGED <<ExpectedUid, ImapTable>>
+
+(* Device d fails to download the message, because
+   it does not exist on the server, and deletes corresponding local record.
+ 
+   This should never happen. *)
+DownloadMessageFailure(d, imapRecord) ==
+  /\ \A storageRecord \in Storage[imapRecord.folder] :   
+          storageRecord.uid /= imapRecord.uid
+  /\ ImapTable[d] = [ImapTable EXCEPT ![d] = ImapTable[d] \ {imapRecord}]
+  /\ ServerUnchanged
+  /\ UNCHANGED <<ExpectedUid, ImapTable>>
+
+ShouldDownload(d, imapRecord) ==
+  /\ imapRecord.folder = "movebox" \* Only download from the movebox to avoid reordering.
+  /\ ~imapRecord.delete
+  /\ imapRecord.messageId \notin ReceivedMessages[d]
+
+DownloadMessage(d) ==
+  \E imapRecord \in ImapTable[d] :
+  /\ ShouldDownload(d, imapRecord)
+  /\ \A imapRecord2 \in ImapTable[d] : \* Download only the message with the lowest UID.
+       (imapRecord.folder = imapRecord2.folder /\ ShouldDownload(d, imapRecord2))
+         => imapRecord2.uid >= imapRecord.uid                          
+  /\ \/ DownloadMessageSuccess(d, imapRecord)
+     \/ DownloadMessageFailure(d, imapRecord)
 
 (* Device `d' successfully moves the message with UID `uid' from the Inbox to the Movebox.
    Note that there is no check that the message being moved has the Message-ID that the device
@@ -148,8 +175,7 @@ MoveMessageSuccess(d, inboxRecord) ==
          [Storage EXCEPT !["inbox"] = Storage["inbox"] \ {r},
                          !["movebox"] = Storage["movebox"] \union
                            {[uid |-> UidNext["movebox"],
-                             messageId |-> r.messageId,
-                             seen |-> r.seen]}]
+                             messageId |-> r.messageId]}]
     /\ UidNext' = [UidNext EXCEPT !["movebox"] = UidNext["movebox"] + 1]
     /\ ImapTable' = [ImapTable EXCEPT ![d] = ImapTable[d] \ {inboxRecord}]
     /\ UNCHANGED <<ExpectedUid, SentMessages, ReceivedMessages>>
@@ -164,26 +190,29 @@ CopyMessage(d, inboxRecord) ==
     /\ Storage' =
          [Storage EXCEPT !["movebox"] = Storage["movebox"] \union
                            {[uid |-> UidNext["movebox"],
-                             messageId |-> r.messageId,
-                             seen |-> r.seen]} ]
+                             messageId |-> r.messageId]} ]
     /\ UidNext' = [UidNext EXCEPT !["movebox"] = UidNext["movebox"] + 1]
     /\ ImapTable' = [ImapTable EXCEPT ![d] = (ImapTable[d] \ {inboxRecord}) \union
          {[inboxRecord EXCEPT !.delete = TRUE]}]
     /\ UNCHANGED <<ExpectedUid, SentMessages, ReceivedMessages>>
 
-(* Device `d' tries to move or copy the message that does not exist on the server
-   and learns that the message does not exist,
-   therefore removes the invalid record from its database.
-
-   Copy failure is not modelled separately as it is indistinguishable
-   from the move failure.
- *)
+(***************************************************************************)
+(* Device `d' tries to move or copy the message that does not exist on the *)
+(* server and learns that the message does not exist, therefore removes    *)
+(* the invalid record from its database.                                   *)
+(*                                                                         *)
+(* Copy failure is not modelled separately as it is indistinguishable from *)
+(* the move failure.                                                       *)
+(***************************************************************************)
 MoveMessageFailure(d, inboxRecord) ==
   /\ \A r \in Storage["inbox"] : r.uid /= inboxRecord.uid \* There is no such UID in the Inbox folder.
   /\ ImapTable' = [ImapTable EXCEPT ![d] = ImapTable[d] \ {inboxRecord}]
   /\ ServerUnchanged
   /\ UNCHANGED <<ExpectedUid, ReceivedMessages>>
 
+
+
+              
 (* Device d attempts to move a message from Inbox to Movebox. *)
 \* FIXME: only move the message with the lowest UID to avoid reordering.
 MoveMessage(d) ==
@@ -196,6 +225,7 @@ MoveMessage(d) ==
       \/ MoveMessageSuccess(d, inboxRecord)
       \/ CopyMessage(d, inboxRecord)
       \/ MoveMessageFailure(d, inboxRecord)
+
 
 (* Device `d' attempts to delete a message from the Inbox for which it believes a copy exists in the Movebox. *)
 \* TODO: test instead that all such messages are scheduled for deletion at any time.
@@ -230,10 +260,10 @@ Next ==
   \/ \E m \in MessageIds : MessageArrives(m)
   \/ \E d \in Devices :
        \/ \E f \in Folders : FetchFolder(d, f)
-       \/ PullFolder(d, "movebox") \* Pull only from Movebox to prevent reordering.
        \/ MoveMessage(d)
        \/ DeleteInboxMessage(d)
        \/ DeleteMessage(d)
+       \/ DownloadMessage(d)
 
 ----------------------------------------------------------------------------
 
@@ -262,6 +292,17 @@ NoReordering ==
   \/ ReceivedMessages[device1] \subseteq ReceivedMessages[device2]
   \/ ReceivedMessages[device2] \subseteq ReceivedMessages[device1]
 
+(* If there is a record for message in the Movebox,
+   then it should be scheduled for deletion in the Inbox. *)
+InboxMessagesScheduledForDeletionInvariant ==
+  \A device \in Devices :
+  \A inboxRecord \in ImapTable[device] :
+  \A moveboxRecord \in ImapTable[device] :
+  (/\ inboxRecord.folder = "inbox"
+   /\ moveboxRecord.folder = "movebox"
+   /\ moveboxRecord.messageId = inboxRecord.messageId)
+  => inboxRecord.delete
+
 Spec == Init /\ [][Next]_<<Storage,
                            UidNext,
                            ExpectedUid,
@@ -271,6 +312,7 @@ Spec == Init /\ [][Next]_<<Storage,
 
 THEOREM Spec => [](TypeOK /\
                    ImapTableCorrect /\
-                   NoReordering)
+                   NoReordering /\
+                   InboxMessagesScheduledForDeletionInvariant)
 
 =============================================================================
