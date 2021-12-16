@@ -23,6 +23,8 @@ VARIABLES Storage, \* The set of messages in the server folders.
           ReceivedMessages, \* The set of Message-IDs downloaded by the devices.
           ImapTable \* Device view of the IMAP server state.
 
+vars == <<Storage, UidNext, LastSeenUid, SentMessages, ReceivedMessages, ImapTable>>
+
 (* The server has two folders: Inbox and Movebox. *)
 Folders ==
   {"inbox", "movebox"}
@@ -107,7 +109,6 @@ MessageArrives(m) ==
 
 (* Device d fetches the messages from the f folder.
    Duplicate messages are marked for deletion.
-   TODO: mark message in Inbox for deletion if there is a copy in the Movebox already.
  *)
 FetchFolder(d, f) ==
   \E storageRecord \in Storage[f] :
@@ -276,6 +277,10 @@ Next ==
 
 ----------------------------------------------------------------------------
 
+Spec == Init /\ [][Next]_vars
+
+THEOREM Spec => []TypeOK
+
 (* An invariant stating that if some device has a record about some message on the IMAP server,
    this record has a correct Message-ID field.
    *)
@@ -284,6 +289,8 @@ ImapTableCorrect ==
   \A record \in ImapTable[device] :
   \A stored \in Storage[record.folder] :
   record.uid = stored.uid => record.messageId = stored.messageId
+
+THEOREM Spec => []ImapTableCorrect
 
 (* The order of message reception is the same for every device.
    This is a weak "no reordering" property, the messages may still be reordered
@@ -301,6 +308,8 @@ NoReordering ==
   \/ ReceivedMessages[device1] \subseteq ReceivedMessages[device2]
   \/ ReceivedMessages[device2] \subseteq ReceivedMessages[device1]
 
+THEOREM Spec => []NoReordering
+
 (* If there is a record for message in the Movebox,
    then it should be scheduled for deletion in the Inbox. *)
 InboxMessagesScheduledForDeletionInvariant ==
@@ -311,31 +320,18 @@ InboxMessagesScheduledForDeletionInvariant ==
    /\ moveboxRecord.folder = "movebox"
    /\ moveboxRecord.messageId = inboxRecord.messageId)
   => inboxRecord.delete
-  
+
+THEOREM Spec => []InboxMessagesScheduledForDeletionInvariant
+
 AllMessagesDownloaded ==
   \A d \in Devices : ReceivedMessages[d] = MessageIds
 
 (* All messages are downloaded eventually.
 We also check that all messages are eventually always downloaded,
 which means they are never undownloaded once they all are downloaded. *)
-\* FIXME fails due to stuttering
 AllMessagesDownloadedEventually ==
-  <>[]AllMessagesDownloaded
-
-AllMessagesDownleadedInTerminatingState ==
-  (~ENABLED Next) => AllMessagesDownloaded
-
-Spec == Init /\ [][Next]_<<Storage,
-                           UidNext,
-                           LastSeenUid,
-                           SentMessages,
-                           ReceivedMessages,
-                           ImapTable>>
-
-THEOREM Spec => [](TypeOK /\
-                   ImapTableCorrect /\
-                   NoReordering /\
-                   InboxMessagesScheduledForDeletionInvariant /\
-                   AllMessagesDownloadedEventually)
+  WF_vars(Next) => <>[]AllMessagesDownloaded
+  
+THEOREM Spec => AllMessagesDownloadedEventually
 
 =============================================================================
