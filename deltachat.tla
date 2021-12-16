@@ -15,7 +15,7 @@ CONSTANT Devices, \* Symmetry set of devices such as `{d1, d2}'.
 
 VARIABLES Storage, \* The set of messages in the server folders.
           UidNext, \* `^UID^' that will be assigned to the next message in a folder.
-          ExpectedUid, \* Function from folder to the next expected `^UID.^'
+          LastSeenUid, \* Function from folder to the next expected `^UID.^'
           SentMessages,(****************************************************)
                        (* The set of Message-IDs that have been sent and   *)
                        (* may eventually arrive into the Inbox.            *)
@@ -47,7 +47,7 @@ TypeOK ==
   /\ \A f \in Folders : \* UIDs in each folder are unique.
      \A m1, m2 \in Storage[f] : m1 /= m2 => m1.uid /= m2.uid
   /\ UidNext \in [Folders -> Nat \ {0}]
-  /\ ExpectedUid \in [Devices -> [Folders -> Nat]]
+  /\ LastSeenUid \in [Devices -> [Folders -> Nat]]
   /\ SentMessages \subseteq MessageIds
   /\ ReceivedMessages \in [Devices -> SUBSET MessageIds]
   /\ ImapTable \in [Devices -> SUBSET ImapRecords]
@@ -58,7 +58,7 @@ TypeOK ==
 Init ==
   /\ Storage = [f \in Folders |-> {}]
   /\ UidNext = [f \in Folders |-> 1]
-  /\ ExpectedUid = [d \in Devices |-> [f \in Folders |-> 0]]
+  /\ LastSeenUid = [d \in Devices |-> [f \in Folders |-> 0]]
   /\ SentMessages = MessageIds
   /\ ReceivedMessages = [d \in Devices |-> {}]
   /\ ImapTable = [d \in Devices |-> {}]
@@ -85,7 +85,7 @@ MessageArrives(m) ==
                                   messageId |-> m]}]
   /\ UidNext' = [UidNext EXCEPT !["inbox"] = UidNext["inbox"] + 1]
   /\ SentMessages' = SentMessages \ {m}
-  /\ UNCHANGED <<ExpectedUid, ReceivedMessages, ImapTable>>
+  /\ UNCHANGED <<LastSeenUid, ReceivedMessages, ImapTable>>
 
 ----------------------------------------------------------------------------
 
@@ -110,23 +110,35 @@ MessageArrives(m) ==
    TODO: mark message in Inbox for deletion if there is a copy in the Movebox already.
  *)
 FetchFolder(d, f) ==
-  LET
-    NewMessages == {x \in Storage[f] : x.uid >= ExpectedUid[d][f]}
-  IN
-  /\ ExpectedUid' = [ExpectedUid EXCEPT ![d][f] = UidNext[f]]
-  /\ UNCHANGED <<Storage, UidNext, SentMessages, ReceivedMessages>>
-  /\ ImapTable' = [ImapTable EXCEPT ![d] =
-       ImapTable[d] \union
-         {[uid |-> r.uid,
-           messageId |-> r.messageId,
-           folder |-> f,
-           delete |-> \/ \E x \in ImapTable[d] : x.folder = r.folder /\
-                                                 x.messageId = r.messageId /\
-                                                 x.delete = FALSE
-                      \/ \E x \in NewMessages : x.uid < r.uid /\
-                                                x.messageId = r.messageId
-           ] : r \in NewMessages }]
-           
+  \E storageRecord \in Storage[f] :
+  /\ storageRecord.uid > LastSeenUid[d][f]
+  /\ \A x \in Storage[f] :
+       \/ x.uid <= LastSeenUid[d][f]
+       \/ x.uid >= storageRecord.uid \* Fetch low UIDs first.
+  /\ LastSeenUid' = [LastSeenUid EXCEPT ![d][f] = storageRecord.uid]
+  /\ LET
+       Duplicate == \* Can happen if message is copied to Movebox twice.
+         \E x \in ImapTable[d] : /\ \/ (x.folder = f /\ x.uid < storageRecord.uid)
+                                    \/ x.folder = "movebox"
+                                 /\ x.messageId = storageRecord.messageId
+                                 /\ x.delete = FALSE
+       NewRecord ==
+         [uid |-> storageRecord.uid,
+          messageId |-> storageRecord.messageId,
+          folder |-> f,
+          delete |-> Duplicate]
+       UpdatedRecordsBefore ==
+         {x \in ImapTable[d] : /\ x.folder = "inbox"
+                               /\ f = "movebox"
+                               /\ x.messageId = storageRecord.messageId}
+       UpdatedRecordsAfter ==
+         {[x EXCEPT !.delete = TRUE] : x \in UpdatedRecordsBefore}
+       NewImapTable ==
+         (ImapTable[d] \union {NewRecord}
+                       \union UpdatedRecordsAfter) \ UpdatedRecordsBefore 
+     IN ImapTable' = [ImapTable EXCEPT ![d] = NewImapTable]
+   /\ UNCHANGED <<Storage, UidNext, SentMessages, ReceivedMessages>>
+          
 DownloadMessageSuccess(d, imapRecord) ==
   \E storageRecord \in Storage[imapRecord.folder] :
   /\ storageRecord.uid = imapRecord.uid
@@ -134,7 +146,7 @@ DownloadMessageSuccess(d, imapRecord) ==
        [ReceivedMessages EXCEPT ![d] =
         ReceivedMessages[d] \union {storageRecord.messageId}]
   /\ ServerUnchanged
-  /\ UNCHANGED <<ExpectedUid, ImapTable>>
+  /\ UNCHANGED <<LastSeenUid, ImapTable>>
 
 (* Device d fails to download the message, because
    it does not exist on the server, and deletes corresponding local record.
@@ -145,7 +157,7 @@ DownloadMessageFailure(d, imapRecord) ==
           storageRecord.uid /= imapRecord.uid
   /\ ImapTable[d] = [ImapTable EXCEPT ![d] = ImapTable[d] \ {imapRecord}]
   /\ ServerUnchanged
-  /\ UNCHANGED <<ExpectedUid, ImapTable>>
+  /\ UNCHANGED <<LastSeenUid, ImapTable>>
 
 ShouldDownload(d, imapRecord) ==
   /\ imapRecord.folder = "movebox" \* Only download from the movebox to avoid reordering.
@@ -178,7 +190,7 @@ MoveMessageSuccess(d, inboxRecord) ==
                              messageId |-> r.messageId]}]
     /\ UidNext' = [UidNext EXCEPT !["movebox"] = UidNext["movebox"] + 1]
     /\ ImapTable' = [ImapTable EXCEPT ![d] = ImapTable[d] \ {inboxRecord}]
-    /\ UNCHANGED <<ExpectedUid, SentMessages, ReceivedMessages>>
+    /\ UNCHANGED <<LastSeenUid, SentMessages, ReceivedMessages>>
 
 (* Device `d' on the server that does not support MOVE
    emulates the MOVE by doing COPY and scheduling the
@@ -194,7 +206,7 @@ CopyMessage(d, inboxRecord) ==
     /\ UidNext' = [UidNext EXCEPT !["movebox"] = UidNext["movebox"] + 1]
     /\ ImapTable' = [ImapTable EXCEPT ![d] = (ImapTable[d] \ {inboxRecord}) \union
          {[inboxRecord EXCEPT !.delete = TRUE]}]
-    /\ UNCHANGED <<ExpectedUid, SentMessages, ReceivedMessages>>
+    /\ UNCHANGED <<LastSeenUid, SentMessages, ReceivedMessages>>
 
 (***************************************************************************)
 (* Device `d' tries to move or copy the message that does not exist on the *)
@@ -208,11 +220,8 @@ MoveMessageFailure(d, inboxRecord) ==
   /\ \A r \in Storage["inbox"] : r.uid /= inboxRecord.uid \* There is no such UID in the Inbox folder.
   /\ ImapTable' = [ImapTable EXCEPT ![d] = ImapTable[d] \ {inboxRecord}]
   /\ ServerUnchanged
-  /\ UNCHANGED <<ExpectedUid, ReceivedMessages>>
-
-
-
-              
+  /\ UNCHANGED <<LastSeenUid, ReceivedMessages>>
+             
 (* Device d attempts to move a message from Inbox to Movebox. *)
 \* FIXME: only move the message with the lowest UID to avoid reordering.
 MoveMessage(d) ==
@@ -238,7 +247,7 @@ DeleteInboxMessage(d) ==
     /\ Storage' =
          [Storage EXCEPT !["inbox"] = {r \in Storage["inbox"] : r.uid /= inboxRecord.uid }]
     /\ ImapTable' = [ImapTable EXCEPT ![d] = ImapTable[d] \ {inboxRecord}]
-    /\ UNCHANGED <<UidNext, ExpectedUid, SentMessages, ReceivedMessages>>
+    /\ UNCHANGED <<UidNext, LastSeenUid, SentMessages, ReceivedMessages>>
 
 (* Device `d' attempts to delete a message scheduled for deletion.
 
@@ -254,7 +263,7 @@ DeleteMessage(d) ==
     /\ Storage' =
          [Storage EXCEPT ![record.folder] = {r \in Storage[record.folder] : r.uid /= record.uid}]
     /\ ImapTable' = [ImapTable EXCEPT ![d] = ImapTable[d] \ {record}]
-    /\ UNCHANGED <<UidNext, ExpectedUid, SentMessages, ReceivedMessages>>
+    /\ UNCHANGED <<UidNext, LastSeenUid, SentMessages, ReceivedMessages>>
 
 Next ==
   \/ \E m \in MessageIds : MessageArrives(m)
@@ -302,10 +311,23 @@ InboxMessagesScheduledForDeletionInvariant ==
    /\ moveboxRecord.folder = "movebox"
    /\ moveboxRecord.messageId = inboxRecord.messageId)
   => inboxRecord.delete
+  
+AllMessagesDownloaded ==
+  \A d \in Devices : ReceivedMessages[d] = MessageIds
+
+(* All messages are downloaded eventually.
+We also check that all messages are eventually always downloaded,
+which means they are never undownloaded once they all are downloaded. *)
+\* FIXME fails due to stuttering
+AllMessagesDownloadedEventually ==
+  <>[]AllMessagesDownloaded
+
+AllMessagesDownleadedInTerminatingState ==
+  (~ENABLED Next) => AllMessagesDownloaded
 
 Spec == Init /\ [][Next]_<<Storage,
                            UidNext,
-                           ExpectedUid,
+                           LastSeenUid,
                            SentMessages,
                            ReceivedMessages,
                            ImapTable>>
@@ -313,6 +335,7 @@ Spec == Init /\ [][Next]_<<Storage,
 THEOREM Spec => [](TypeOK /\
                    ImapTableCorrect /\
                    NoReordering /\
-                   InboxMessagesScheduledForDeletionInvariant)
+                   InboxMessagesScheduledForDeletionInvariant /\
+                   AllMessagesDownloadedEventually)
 
 =============================================================================
