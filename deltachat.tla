@@ -237,7 +237,6 @@ ShouldMove(d, imapRecord) ==
   /\ imapRecord.delete = FALSE \* This message is not scheduled for deletion.
 
 (* Device d attempts to move a message from Inbox to Movebox. *)
-\* FIXME: only move the message with the lowest UID to avoid reordering.
 MoveMessage(d) ==
   \E imapRecord \in ImapTable[d] :
     /\ ShouldMove(d, imapRecord)
@@ -248,20 +247,6 @@ MoveMessage(d) ==
       \/ MoveMessageSuccess(d, imapRecord)
       \/ CopyMessage(d, imapRecord)
       \/ MoveMessageFailure(d, imapRecord)
-
-(* Device `d' attempts to delete a message from the Inbox for which it
-   believes a copy exists in the Movebox. *)
-\* TODO: test instead that all such messages are scheduled for deletion at any time.
-DeleteInboxMessage(d) ==
-  \E inboxRecord \in ImapTable[d] :
-  \E moveboxRecord \in ImapTable[d] :
-    /\ inboxRecord.folder = "inbox"
-    /\ moveboxRecord.folder = "movebox"
-    /\ inboxRecord.messageId = moveboxRecord.messageId
-    /\ Storage' =
-         [Storage EXCEPT !["inbox"] = {r \in Storage["inbox"] : r.uid /= inboxRecord.uid }]
-    /\ ImapTable' = [ImapTable EXCEPT ![d] = ImapTable[d] \ {inboxRecord}]
-    /\ UNCHANGED <<UidNext, LastSeenUid, SentMessages, ReceivedMessages>>
 
 (* Device `d' attempts to delete a message scheduled for deletion.
 
@@ -284,7 +269,6 @@ Next ==
   \/ \E d \in Devices :
        \/ \E f \in Folders : FetchFolder(d, f)
        \/ MoveMessage(d)
-       \/ DeleteInboxMessage(d)
        \/ DeleteMessage(d)
        \/ DownloadMessage(d)
 
