@@ -257,11 +257,14 @@ MoveMessage(d) ==
    device deletes its record about this message.
    *)
 DeleteMessage(d) ==
-  \E record \in ImapTable[d] :
-    /\ record.delete = TRUE
+  \E imapRecord \in ImapTable[d] :
+    /\ imapRecord.delete = TRUE
+    /\ \A imapRecord2 \in ImapTable[d] :
+         (imapRecord.folder = imapRecord2.folder /\ imapRecord2.delete)
+           => imapRecord2.uid >= imapRecord.uid
     /\ Storage' =
-         [Storage EXCEPT ![record.folder] = {r \in Storage[record.folder] : r.uid /= record.uid}]
-    /\ ImapTable' = [ImapTable EXCEPT ![d] = ImapTable[d] \ {record}]
+         [Storage EXCEPT ![imapRecord.folder] = {r \in Storage[imapRecord.folder] : r.uid /= imapRecord.uid}]
+    /\ ImapTable' = [ImapTable EXCEPT ![d] = ImapTable[d] \ {imapRecord}]
     /\ UNCHANGED <<UidNext, LastSeenUid, SentMessages, ReceivedMessages>>
 
 Next ==
