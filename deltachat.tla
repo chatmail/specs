@@ -16,7 +16,7 @@ CONSTANT Devices, (* Symmetry set of devices such as `{d1, d2}'. *)
                           (* Sequence of Message-IDs in the order of       *)
                           (* delivery, such as <<m1, m1, m2, m1>>          *)
                           (*************************************************)
-         
+
 VARIABLES Storage, \* The set of messages in the server folders.
           UidNext, \* `^UID^' that will be assigned to the next message in a folder.
           LastSeenUid, \* Function from folder to the next expected `^UID.^'
@@ -147,7 +147,7 @@ FetchFolder(d, f) ==
              \union {NewRecord}
      IN ImapTable' = [ImapTable EXCEPT ![d] = NewImapTable]
    /\ UNCHANGED <<Storage, UidNext, SentMessages, ReceivedMessages>>
-          
+
 DownloadMessageSuccess(d, imapRecord) ==
   \E storageRecord \in Storage[imapRecord.folder] :
   /\ storageRecord.uid = imapRecord.uid
@@ -159,10 +159,10 @@ DownloadMessageSuccess(d, imapRecord) ==
 
 (* Device d fails to download the message, because
    it does not exist on the server, and deletes corresponding local record.
- 
+
    This should never happen. *)
 DownloadMessageFailure(d, imapRecord) ==
-  /\ \A storageRecord \in Storage[imapRecord.folder] :   
+  /\ \A storageRecord \in Storage[imapRecord.folder] :
           storageRecord.uid /= imapRecord.uid
   /\ ImapTable[d] = [ImapTable EXCEPT ![d] = ImapTable[d] \ {imapRecord}]
   /\ ServerUnchanged
@@ -235,7 +235,7 @@ MoveMessageFailure(d, inboxRecord) ==
 ShouldMove(d, imapRecord) ==
   /\ imapRecord.folder = "inbox" \* Device knows about a message in the Inbox.
   /\ imapRecord.delete = FALSE \* This message is not scheduled for deletion.
-        
+
 (* Device d attempts to move a message from Inbox to Movebox. *)
 \* FIXME: only move the message with the lowest UID to avoid reordering.
 MoveMessage(d) ==
@@ -336,7 +336,7 @@ Unique(s) ==
            Test(x) == x /= h
          IN
             <<h>> \o SelectSeq(Tail(s), Test)
-            
+
 CorrectReceptionOrder ==
   Unique(InitSentMessages)
 
@@ -344,12 +344,12 @@ StrongNoReordering ==
   \A device \in Devices :
   ReceivedMessages[device] =
   SubSeq(CorrectReceptionOrder, 1, Len(ReceivedMessages[device]))
-  
+
 THEOREM Spec => []StrongNoReordering
 
 (* If there is a record for message in the Movebox,
    then it should be scheduled for deletion in the Inbox.
-   
+
    This guarantees that we never move the message to the Movebox
    if we know that there is a copy already,
    because we don't move messages scheduled for deletion. *)
@@ -377,12 +377,12 @@ We also check that all messages are eventually always downloaded,
 which means they are never undownloaded once they all are downloaded. *)
 AllMessagesDownloadedEventually ==
   WF_vars(Next) => <>[]AllMessagesDownloaded
-  
+
 THEOREM Spec => AllMessagesDownloadedEventually
 
 EmptyInboxEventually ==
   WF_vars(Next) => <>[](Storage["inbox"] = {})
-  
+
 THEOREM Spec => EmptyInboxEventually
 
 (***************************************************************************)
@@ -395,7 +395,7 @@ ImapTableReflectsStorage ==
   /\ r.uid = x.uid
   /\ r.messageId = x.messageId
   /\ r.delete = FALSE
-  
+
 StorageReflectsImapTable ==
   \A d \in Devices :
   \A f \in Folders :
@@ -405,7 +405,7 @@ StorageReflectsImapTable ==
   /\ r.messageId = x.messageId
   /\ r.folder = f
   /\ r.delete = FALSE
-  
+
 PerfectImapTable ==
   ImapTableReflectsStorage /\ StorageReflectsImapTable
 
