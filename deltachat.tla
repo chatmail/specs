@@ -44,7 +44,7 @@ ImapRecords ==
   [messageId: MessageIds,
    uid: Nat \ {0},
    folder: Folders,
-   delete: BOOLEAN] \* Whether the message must be deleted.
+   target: Folders \union {""}] (* Empty string means the message is to be deleted. *)
 
 ----------------------------------------------------------------------------
 
@@ -126,18 +126,22 @@ FetchFolder(d, f) ==
          \E x \in ImapTable[d] : /\ \/ (x.folder = f /\ x.uid < storageRecord.uid)
                                     \/ x.folder = "movebox"
                                  /\ x.messageId = storageRecord.messageId
-                                 /\ x.delete = FALSE
+                                 /\ x.target /= ""
+       Target ==
+         IF Duplicate
+           THEN ""
+           ELSE "movebox"
        NewRecord ==
          [uid |-> storageRecord.uid,
           messageId |-> storageRecord.messageId,
           folder |-> f,
-          delete |-> Duplicate]
+          target |-> Target]
        UpdatedRecordsBefore ==
          {x \in ImapTable[d] : /\ x.folder = "inbox"
                                /\ f = "movebox"
                                /\ x.messageId = storageRecord.messageId}
        UpdatedRecordsAfter ==
-         {[x EXCEPT !.delete = TRUE] : x \in UpdatedRecordsBefore}
+         {[x EXCEPT !.target = ""] : x \in UpdatedRecordsBefore}
        NewImapTable == (****************************************************)
                        (* Remove first, then add.  Otherwise new/updated   *)
                        (* records may be deleted if they existed before.   *)
@@ -169,8 +173,7 @@ DownloadMessageFailure(d, imapRecord) ==
   /\ UNCHANGED <<LastSeenUid, ImapTable>>
 
 ShouldDownload(d, imapRecord) ==
-  /\ imapRecord.folder = "movebox" \* Only download from the movebox to avoid reordering.
-  /\ ~imapRecord.delete
+  /\ imapRecord.folder = imapRecord.target \* Only download from the movebox to avoid reordering.
   /\ \A i \in 1..Len(ReceivedMessages[d]) : imapRecord.messageId /= ReceivedMessages[d][i]
 
 DownloadMessage(d) ==
@@ -194,10 +197,10 @@ MoveMessageSuccess(d, inboxRecord) ==
     /\ r.uid = inboxRecord.uid \* The message actually exists in the Inbox folder.
     /\ Storage' =
          [Storage EXCEPT !["inbox"] = Storage["inbox"] \ {r},
-                         !["movebox"] = Storage["movebox"] \union
-                           {[uid |-> UidNext["movebox"],
+                         ![inboxRecord.target] = Storage[inboxRecord.target] \union
+                           {[uid |-> UidNext[inboxRecord.target],
                              messageId |-> r.messageId]}]
-    /\ UidNext' = [UidNext EXCEPT !["movebox"] = UidNext["movebox"] + 1]
+    /\ UidNext' = [UidNext EXCEPT ![inboxRecord.target] = UidNext[inboxRecord.target] + 1]
     /\ ImapTable' = [ImapTable EXCEPT ![d] = ImapTable[d] \ {inboxRecord}]
     /\ UNCHANGED <<LastSeenUid, SentMessages, ReceivedMessages>>
 
@@ -210,12 +213,12 @@ CopyMessage(d, inboxRecord) ==
   \E r \in Storage["inbox"] :
     /\ r.uid = inboxRecord.uid
     /\ Storage' =
-         [Storage EXCEPT !["movebox"] = Storage["movebox"] \union
-                           {[uid |-> UidNext["movebox"],
+         [Storage EXCEPT ![inboxRecord.target] = Storage[inboxRecord.target] \union
+                           {[uid |-> UidNext[inboxRecord.target],
                              messageId |-> r.messageId]} ]
-    /\ UidNext' = [UidNext EXCEPT !["movebox"] = UidNext["movebox"] + 1]
+    /\ UidNext' = [UidNext EXCEPT ![inboxRecord.target] = UidNext[inboxRecord.target] + 1]
     /\ ImapTable' = [ImapTable EXCEPT ![d] = (ImapTable[d] \ {inboxRecord}) \union
-         {[inboxRecord EXCEPT !.delete = TRUE]}]
+         {[inboxRecord EXCEPT !.target = ""]}]
     /\ UNCHANGED <<LastSeenUid, SentMessages, ReceivedMessages>>
 
 (***************************************************************************)
@@ -227,14 +230,14 @@ CopyMessage(d, inboxRecord) ==
 (* the move failure.                                                       *)
 (***************************************************************************)
 MoveMessageFailure(d, inboxRecord) ==
-  /\ \A r \in Storage["inbox"] : r.uid /= inboxRecord.uid \* There is no such UID in the Inbox folder.
+  /\ \A r \in Storage[inboxRecord.folder] : r.uid /= inboxRecord.uid \* There is no such UID in the Inbox folder.
   /\ ImapTable' = [ImapTable EXCEPT ![d] = ImapTable[d] \ {inboxRecord}]
   /\ ServerUnchanged
   /\ UNCHANGED <<LastSeenUid, ReceivedMessages>>
 
 ShouldMove(d, imapRecord) ==
-  /\ imapRecord.folder = "inbox" \* Device knows about a message in the Inbox.
-  /\ imapRecord.delete = FALSE \* This message is not scheduled for deletion.
+  /\ imapRecord.folder /= imapRecord.target \* Device knows about a message in the Inbox.
+  /\ imapRecord.target /= "" \* This message is not scheduled for deletion.
 
 (* Device d attempts to move a message from Inbox to Movebox. *)
 MoveMessage(d) ==
@@ -258,9 +261,9 @@ MoveMessage(d) ==
    *)
 DeleteMessage(d) ==
   \E imapRecord \in ImapTable[d] :
-    /\ imapRecord.delete = TRUE
+    /\ imapRecord.target = ""
     /\ \A imapRecord2 \in ImapTable[d] :
-         (imapRecord.folder = imapRecord2.folder /\ imapRecord2.delete)
+         (imapRecord.folder = imapRecord2.folder /\ imapRecord2.target = "")
            => imapRecord2.uid >= imapRecord.uid
     /\ Storage' =
          [Storage EXCEPT ![imapRecord.folder] = {r \in Storage[imapRecord.folder] : r.uid /= imapRecord.uid}]
@@ -347,7 +350,7 @@ InboxMessagesScheduledForDeletionInvariant ==
   (/\ inboxRecord.folder = "inbox"
    /\ moveboxRecord.folder = "movebox"
    /\ moveboxRecord.messageId = inboxRecord.messageId)
-  => inboxRecord.delete
+  => inboxRecord.target = ""
 
 THEOREM Spec => []InboxMessagesScheduledForDeletionInvariant
 
@@ -381,7 +384,7 @@ ImapTableReflectsStorage ==
   \E x \in Storage[r.folder] :
   /\ r.uid = x.uid
   /\ r.messageId = x.messageId
-  /\ r.delete = FALSE
+  /\ r.target = r.folder
 
 StorageReflectsImapTable ==
   \A d \in Devices :
@@ -391,7 +394,7 @@ StorageReflectsImapTable ==
   /\ r.uid = x.uid
   /\ r.messageId = x.messageId
   /\ r.folder = f
-  /\ r.delete = FALSE
+  /\ r.target = f
 
 PerfectImapTable ==
   ImapTableReflectsStorage /\ StorageReflectsImapTable
