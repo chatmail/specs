@@ -95,22 +95,34 @@ AddsMember(d) ==
   /\ d \in Members[d]
   /\ \E m \in AllDevices :
      /\ m \notin Members[d]
-     /\ Members' = [x \in AllDevices |-> IF x = d
-                                         THEN Members[x] \union {m}
-                                         ELSE Members[x]]
+     /\ Members' = [Members EXCEPT ![d] = Members[d] \union {m}]
      /\ LET
           MemberAddedMessage == [receivers |-> Members[d] \union {m},
                                  members |-> Members[d]]
         IN
-          Queues' = [<<s, r>> \in DevicePairs |-> IF s = d /\ (r \in Members[d] \/ r = m)
-        THEN Append(Queues[s, r], MemberAddedMessage)
-        ELSE Queues[s, r]]
+          Queues' = [<<s, r>> \in DevicePairs |->
+                     IF s = d /\ (r \in Members[d] \/ r = m)
+                     THEN Append(Queues[s, r], MemberAddedMessage)
+                     ELSE Queues[s, r]]
+
+RemovesMember(d) ==
+  /\ d \in Members[d]
+  /\ \E m \in Members[d] : \* It is possible that m = d, then d leaves the group.
+     /\ Members' = [Members EXCEPT ![d] = Members[d] \ {m}]
+     /\ LET
+          MemberRemovedMessage == [receivers |-> Members[d] \ {m}, \* Actually removed member is a receiver too unless it is `d`
+                                   members |-> Members[d]]
+        IN
+          Queues' = [<<s, r>> \in DevicePairs |->
+                     IF s = d /\ (r \in Members[d]) \* Removed member gets the message as well.
+                     THEN Append(Queues[s, r], MemberRemovedMessage)
+                     ELSE Queues[s, r]]
         
 (* Message reception logic, the main part of the protocol. *)
 ReceivesMessage(r) ==
   \E s \in AllDevices \ {r} :
   /\ Queues[s, r] /= <<>>
-  /\ Queues' = [<<x, y>> \in DevicePairs |-> IF x = s /\ y = r THEN Tail(Queues[s, r]) ELSE Queues[s, r]]
+  /\ Queues' = [<<x, y>> \in DevicePairs |-> IF x = s /\ y = r THEN Tail(Queues[s, r]) ELSE Queues[x, y]]
   /\ LET ReceivedMessage == Head(Queues[s, r])
      IN Members' = [x \in AllDevices |-> IF x = r
                                          THEN ReceivedMessage.receivers
@@ -119,6 +131,7 @@ ReceivesMessage(r) ==
 Next ==
   \/ \E d \in AllDevices : SendsChatMessage(d)
   \/ \E d \in AllDevices : AddsMember(d)
+  \/ \E d \in AllDevices : RemovesMember(d)
   \/ \E d \in AllDevices : ReceivesMessage(d)
   \/ UNCHANGED vars
 
@@ -131,6 +144,6 @@ Spec == Init /\ [][Next]_vars
  * then eventually group is always conistent.
  *)
 EventualConsistencyProperty ==
-  (MembersKeepChatting /\ EventuallyMembershipChangesNeverQueued) => <>[]GroupConsistency
+  (WF_Queues(Next) /\ MembersKeepChatting /\ EventuallyMembershipChangesNeverQueued) => <>[]GroupConsistency
 
 =============================================================================
