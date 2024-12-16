@@ -48,7 +48,7 @@ DevicePairs == { <<x, y>> \in AllDevices \X AllDevices : x # y }
 
 (* If both devices think they are in the chat,
  * they must have the same memberlist.
- * 
+ *
  * We want to have this property eventually
  * if devices stop adding and removing members,
  * but it does not hold at all times.
@@ -58,13 +58,13 @@ GroupConsistency ==
   \/ d1 \notin Members[d1]
   \/ d2 \notin Members[d2]
   \/ Members[d1] = Members[d2]
-  
+
 (* Message queues have no membership changing messages. *)
 NoMembershipChangesQueued ==
   \A q \in DevicePairs :
   \A i \in 1..Len(Queues[q]) :
   Queues[q][i].receivers = Queues[q][i].members
-  
+
 (* Eventually membership changes are never queued. *)
 EventuallyMembershipChangesNeverQueued ==
   <>[]NoMembershipChangesQueued
@@ -98,7 +98,7 @@ SendsChatMessage(d) ==
        Queues' = [<<s, r>> \in DevicePairs |-> IF s = d /\ r \in Members[d]
                                                THEN Append(Queues[s, r], NewMessage)
                                                ELSE Queues[s, r]]
-                                               
+
 AddsMember(d) ==
   /\ d \in Members[d]
   /\ \E m \in AllDevices :
@@ -125,7 +125,7 @@ RemovesMember(d) ==
                      IF s = d /\ (r \in Members[d]) \* Removed member gets the message as well.
                      THEN Append(Queues[s, r], MemberRemovedMessage)
                      ELSE Queues[s, r]]
-        
+
 (* Message reception logic, the main part of the protocol. *)
 ReceivesMessage(r) ==
   \E s \in AllDevices \ {r} :
@@ -135,7 +135,7 @@ ReceivesMessage(r) ==
      IN Members' = [x \in AllDevices |-> IF x = r
                                          THEN ReceivedMessage.receivers
                                          ELSE Members[x]]
-          
+
 Next ==
   \/ \E d \in AllDevices : SendsChatMessage(d)
   \/ \E d \in AllDevices : AddsMember(d)
