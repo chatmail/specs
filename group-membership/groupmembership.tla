@@ -8,18 +8,13 @@ EXTENDS Naturals,
         Sequences
 
 CONSTANT \* Symmetry set of devices such as `{d1, d2, d3}'.
-         \* @type: Set(Str);
          Devices,
-         \* @type: Str;
          Creator, \* Device that created the chat.
-         \* @type: Int;
          MaxQueue \* Bound on the queue size to keep the model bounded.
 
 VARIABLES \* Map from device to the set of devices it thinks are members of the group .
-          \* @type: Str -> Set(Str);
           Members,
           \* FIFO queues of messages sent between devices.
-          \* @type: <<Str, Str>> -> Seq({ receivers: Set(Str), members: Set(Str)});
           Queues
 
 vars == <<Members, Queues>>
@@ -130,7 +125,7 @@ RemovesMember(d) ==
 ReceivesMessage(r) ==
   \E s \in AllDevices \ {r} :
   /\ Queues[s, r] /= <<>>
-  /\ Queues' = [<<x, y>> \in DevicePairs |-> IF x = s /\ y = r THEN Tail(Queues[s, r]) ELSE Queues[x, y]]
+  /\ Queues' = [Queues EXCEPT ![<<s, r>>] = Tail(Queues[s, r])]
   /\ LET ReceivedMessage == Head(Queues[s, r])
      IN Members' = [x \in AllDevices |-> IF x = r
                                          THEN ReceivedMessage.receivers
