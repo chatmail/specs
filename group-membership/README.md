@@ -152,3 +152,70 @@ The following state transitions can happen during the simulation:
    it sends a message with the same new and old member list.
 
 2. Device reads one message from one of its FIFO channels.
+
+# Algorithms
+
+Possible algorithms
+mainly differ in how they process
+received messages.
+
+## Always accept the `To:` field
+
+The simplest algorithm is to always accept the `To:` field as the new memberlist.
+This fails both eventual consistency property and immediate consistency property.
+
+Counterexample for eventual consistency found with TLC:
+
+There are 3 devices:
+Creator, Alice and Bob.
+
+1. Creator creates a chat.
+2. Creator adds Alice to the chat.
+   Now Alice has one incoming message with {Alice, Creator} in the `To:` field.
+3. Alice receives a message.
+   Now there are no messages in the network,
+   Alice and Creator have the same memberlist {Alice, Creator}.
+4. Creator adds Bob.
+   Now both Alice and Bob have pending "Member added" message
+   in their inboxes.
+5. Bob receives member added message.
+   Alice has memberlist {Alice, Creator}.
+   Bob has memberlist {Alice, Bob, Creator}.
+   Creator has memberlist {Ailce, Bob, Creator}.
+6. Alice sends a chat message to {Alice, Creator}.
+   It drops into Creator's inbox who now has one unread message.
+7. Alice finally reads "Member added message".
+   Everything is now consistent,
+   everyone has memberlist {Alice, Bob, Creator}.
+   But Creator still has a message from Alice
+   to {Alice, Creator} in the inbox.
+8. Bob sends a chat message.
+   Now Alice has one unread message
+   from Bob to {Alice, Bob, Creator}
+   and Creator has unread message
+   from Bob to {Alice, Bob, Creator}
+   plus old message from Alice to {Alice, Creator}.
+9. Creator reads Alice's message
+   and now has memberlist {Alice, Creator}.
+10. Creator sends a chat message
+    (to Alice only).
+    Now Alice has one unread message from Bob
+    to {Alice, Bob, Creator}
+    and one message from Creator to {Alice, Creator}.
+    Creator still has unread message from Bob
+    to {Alice, Bob, Creator}.
+11. Creator reads message from Bob.
+12. Alice reads message from Creator.
+
+    Now Alice has {Ailce, Creator}
+    as a memberlist,
+    Bob and Creator have {Alice, Bob, Creator}
+    and there is still a message
+    in Alice's queue from Bob
+    to {Ailce, Bob, Creator}.
+13. Alice sends a message to chat,
+    adding a message from Alice
+    to {Alice, Creator}
+    to Creator's inbox.
+14. Loop back to state 7
+    by Alice reading message from Bob.
