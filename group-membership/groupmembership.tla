@@ -146,4 +146,6 @@ Spec == Init /\ [][Next]_vars
 EventualConsistencyProperty ==
   (WF_Queues(Next) /\ MembersKeepChatting /\ EventuallyMembershipChangesNeverQueued) => <>[]GroupConsistency
 
+StateConstraint == \A <<x, y>> \in DevicePairs : Len(Queues[x, y]) < MaxQueue
+
 =============================================================================
