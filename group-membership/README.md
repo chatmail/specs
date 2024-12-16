@@ -131,7 +131,7 @@ Less formally, as long as membership of some device is not modified,
 fetching all messages should be enough to get into state consistent
 with other similar devices.
 
-### State transitions
+## State transitions
 
 Initially there is one device
 that created the chat and has itself in the member list
