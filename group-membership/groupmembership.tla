@@ -124,12 +124,15 @@ GroupConsistency ==
   \/ Members[d1] = Members[d2]
 
 (*
- * All devices which think they are members of the chat
- * keep chatting.
+ * All devices which can chat keep chatting.
  *)
 MembersKeepChatting ==
   \A d \in AllDevices :
-  d \in Members[d] => <>(\E r \in (AllDevices \ {d}) : Len(Queues[d, r]) > 0)
+  WF_vars(SendsChatMessage(d))
+
+DevicesKeepReceiving ==
+  \A d \in AllDevices :
+  WF_vars(ReceivesMessage(d))
 
 (* Message queues have no membership changing messages. *)
 NoMembershipChanges ==
@@ -145,7 +148,7 @@ EventuallyNoMembershipChanges ==
  * then eventually group is always conistent.
  *)
 EventualConsistencyProperty ==
-  (WF_Queues(Next) /\ MembersKeepChatting /\ EventuallyNoMembershipChanges) => <>[]GroupConsistency
+  (WF_Queues(Next) /\ MembersKeepChatting /\ DevicesKeepReceiving /\ EventuallyNoMembershipChanges) => <>[]GroupConsistency
 
 
 =============================================================================
