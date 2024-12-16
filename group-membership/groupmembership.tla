@@ -131,11 +131,14 @@ ReceivesMessage(r) ==
                                          THEN ReceivedMessage.receivers
                                          ELSE Members[x]]
 
+Actions(d) ==
+  \/ SendsChatMessage(d)
+  \/ AddsMember(d)
+  \/ RemovesMember(d)
+  \/ ReceivesMessage(d)
+
 Next ==
-  \/ \E d \in AllDevices : SendsChatMessage(d)
-  \/ \E d \in AllDevices : AddsMember(d)
-  \/ \E d \in AllDevices : RemovesMember(d)
-  \/ \E d \in AllDevices : ReceivesMessage(d)
+  \/ \E d \in AllDevices : Actions(d)
   \/ UNCHANGED vars
 
 ----------------------------------------------------------------------------
