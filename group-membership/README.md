@@ -1,6 +1,22 @@
 # Modeling group membership
 
-Assumptions:
+We simulate managing group membership
+of a single group chat.
+Initially the chat is created on some
+arbitrary device.
+
+Devices interact by sending messages.
+Each message contains the set of recipients
+(`To:` header) and the set of old recipients prior to sending the message.
+In Delta Chat there is no header to send the list of old recipients,
+but it can be derived from the `To:` header
+by removing the member if it is listed in `Chat-Group-Member-Added` header
+or adding it if it is listed in the `Chat-Group-Member-Removed` header.
+We do not consider non-chat messages,
+for them we can assume that old list of recipients is the same
+as our current member list.
+
+## Assumptions
 
 1. Devices send messages to each other over reliable FIFO channels.
 
@@ -72,21 +88,9 @@ Assumptions:
    in the same order,
    but these are just additional constraints on the simulation runs.
 
-We simulate a single group chat
-as group chats are independent.
-Initially the chat is created on some
-arbitrary device.
+## Requirements
 
-Devices interact by sending messages.
-Each message contains the set of recipients
-(`To:` header) and the set of old recipients prior to sending the message.
-In Delta Chat there is no header to send the list of old recipients,
-but it can be derived from the `To:` header
-by removing the member if it is listed in `Chat-Group-Member-Added` header
-or adding it if it is listed in the `Chat-Group-Member-Removed` header.
-We do not consider non-chat messages,
-for them we can assume that old list of recipients is the same
-as our current member list.
+### Eventual consistency
 
 We want a protocol that results
 in all devices that think they are part of the member list
@@ -114,6 +118,20 @@ given the following conditions:
    to send a message, but this requirement is difficult to formalize.
 
 2. All devices eventually stop sending membership messages that change member list.
+
+### Immediate consistency
+
+If subset of devices S has empty reception queues
+and the same view of the group memberlist
+and later always only modifies membership of devices outside the state S,
+then whenever devices in the set S have empty reception queues
+they have the same group memberlist.
+
+Less formally, as long as membership of some device is not modified,
+fetching all messages should be enough to get into state consistent
+with other similar devices.
+
+### State transitions
 
 Initially there is one device
 that created the chat and has itself in the member list
