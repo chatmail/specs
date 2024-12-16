@@ -31,8 +31,7 @@ AllDevices ==
  * because messages for each sender are placed into its own queue.
  *)
 Messages ==
-  [receivers: SUBSET AllDevices, \* New member list and message receivers.
-   members: SUBSET AllDevices \* Old member list.
+  [members: SUBSET AllDevices \* New member list.
    ] (* TODO add timestamps *)
 
 (* Bounded sequence type. *)
@@ -53,16 +52,6 @@ GroupConsistency ==
   \/ d1 \notin Members[d1]
   \/ d2 \notin Members[d2]
   \/ Members[d1] = Members[d2]
-
-(* Message queues have no membership changing messages. *)
-NoMembershipChangesQueued ==
-  \A q \in DevicePairs :
-  \A i \in 1..Len(Queues[q]) :
-  Queues[q][i].receivers = Queues[q][i].members
-
-(* Eventually membership changes are never queued. *)
-EventuallyMembershipChangesNeverQueued ==
-  <>[]NoMembershipChangesQueued
 
 (*
  * All devices which think they are members of the chat
@@ -87,8 +76,7 @@ SendsChatMessage(d) ==
   /\ d \in Members[d]
   /\ UNCHANGED Members
   /\ LET
-       NewMessage == [receivers |-> Members[d],
-                      members |-> Members[d]]
+       NewMessage == [members |-> Members[d]]
      IN
        Queues' = [<<s, r>> \in DevicePairs |-> IF s = d /\ r \in Members[d]
                                                THEN Append(Queues[s, r], NewMessage)
@@ -100,8 +88,7 @@ AddsMember(d) ==
      /\ m \notin Members[d]
      /\ Members' = [Members EXCEPT ![d] = Members[d] \union {m}]
      /\ LET
-          MemberAddedMessage == [receivers |-> Members[d] \union {m},
-                                 members |-> Members[d]]
+          MemberAddedMessage == [members |-> Members[d] \union {m}]
         IN
           Queues' = [<<s, r>> \in DevicePairs |->
                      IF s = d /\ (r \in Members[d] \/ r = m)
@@ -113,8 +100,7 @@ RemovesMember(d) ==
   /\ \E m \in Members[d] : \* It is possible that m = d, then d leaves the group.
      /\ Members' = [Members EXCEPT ![d] = Members[d] \ {m}]
      /\ LET
-          MemberRemovedMessage == [receivers |-> Members[d] \ {m}, \* Actually removed member is a receiver too unless it is `d`
-                                   members |-> Members[d]]
+          MemberRemovedMessage == [members |-> Members[d] \ {m}]
         IN
           Queues' = [<<s, r>> \in DevicePairs |->
                      IF s = d /\ (r \in Members[d]) \* Removed member gets the message as well.
@@ -128,7 +114,7 @@ ReceivesMessage(r) ==
   /\ Queues' = [Queues EXCEPT ![<<s, r>>] = Tail(Queues[s, r])]
   /\ LET ReceivedMessage == Head(Queues[s, r])
      IN Members' = [x \in AllDevices |-> IF x = r
-                                         THEN ReceivedMessage.receivers
+                                         THEN ReceivedMessage.members
                                          ELSE Members[x]]
 
 Actions(d) ==
@@ -145,12 +131,21 @@ Next ==
 
 Spec == Init /\ [][Next]_vars
 
+(* Message queues have no membership changing messages. *)
+NoMembershipChanges ==
+  \A d \in AllDevices :
+  ~AddsMember(d) /\ ~RemovesMember(d)
+
+(* Eventually membership changes are never queued. *)
+EventuallyNoMembershipChanges ==
+  <>[][NoMembershipChanges]_vars
+
 (*
  * If chat members keep chatting and eventually stop adding or removing members,
  * then eventually group is always conistent.
  *)
 EventualConsistencyProperty ==
-  (WF_Queues(Next) /\ MembersKeepChatting /\ EventuallyMembershipChangesNeverQueued) => <>[]GroupConsistency
+  (WF_Queues(Next) /\ MembersKeepChatting /\ EventuallyNoMembershipChanges) => <>[]GroupConsistency
 
 
 =============================================================================
