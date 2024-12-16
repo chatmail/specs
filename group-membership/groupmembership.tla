@@ -40,27 +40,6 @@ SeqOf(set, n) == UNION {[1..m -> set] : m \in 0..n}
 (* Pairs of devices excluding pairs of devices with self. *)
 DevicePairs == { <<x, y>> \in AllDevices \X AllDevices : x # y }
 
-(* If both devices think they are in the chat,
- * they must have the same memberlist.
- *
- * We want to have this property eventually
- * if devices stop adding and removing members,
- * but it does not hold at all times.
- *)
-GroupConsistency ==
-  \A d1, d2 \in AllDevices :
-  \/ d1 \notin Members[d1]
-  \/ d2 \notin Members[d2]
-  \/ Members[d1] = Members[d2]
-
-(*
- * All devices which think they are members of the chat
- * keep chatting.
- *)
-MembersKeepChatting ==
-  \A d \in AllDevices :
-  d \in Members[d] => <>(\E r \in (AllDevices \ {d}) : Len(Queues[d, r]) > 0)
-
 TypeOK ==
   /\ Members \in [AllDevices -> SUBSET AllDevices]
   /\ Queues \in [DevicePairs -> Seq(Messages)]
@@ -127,9 +106,30 @@ Next ==
   \/ \E d \in AllDevices : Actions(d)
   \/ UNCHANGED vars
 
+Spec == Init /\ [][Next]_vars
+
 ----------------------------------------------------------------------------
 
-Spec == Init /\ [][Next]_vars
+(* If both devices think they are in the chat,
+ * they must have the same memberlist.
+ *
+ * We want to have this property eventually
+ * if devices stop adding and removing members,
+ * but it does not hold at all times.
+ *)
+GroupConsistency ==
+  \A d1, d2 \in AllDevices :
+  \/ d1 \notin Members[d1]
+  \/ d2 \notin Members[d2]
+  \/ Members[d1] = Members[d2]
+
+(*
+ * All devices which think they are members of the chat
+ * keep chatting.
+ *)
+MembersKeepChatting ==
+  \A d \in AllDevices :
+  d \in Members[d] => <>(\E r \in (AllDevices \ {d}) : Len(Queues[d, r]) > 0)
 
 (* Message queues have no membership changing messages. *)
 NoMembershipChanges ==
