@@ -140,18 +140,23 @@ and all other devices have empty member list.
 The following state transitions can happen during the simulation:
 
 1. Device that thinks it is currently a member
-   of the chat sends a message,
-   adding it to FIFO channels of all chat members.
+   adds another device to the chat.
 
-   It changes its member list to the new value.
-   New member list has no restrictions,
-   it can add or remove any members, including the sending device
-   so device can leave the group.
+   It adds new device to its local member list
+   and sends "Member added" message
+   to all devices in the new member list
+   by adding it to FIFO channels of all chat members.
 
-   If device is just chatting,
-   it sends a message with the same new and old member list.
+2. Device that thinks it is currently a member
+   removes a member (possibly self) from the chat.
 
-2. Device reads one message from one of its FIFO channels.
+   It removes a device from its local member list
+   and sends a "Member removed" message
+   to all devices in the old member list.
+
+3. Device sends a chat message to the group.
+
+4. Device reads one message from one of its FIFO channels.
 
 # Algorithms
 
