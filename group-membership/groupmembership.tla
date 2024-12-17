@@ -90,7 +90,7 @@ RemovesMember(d) ==
 ReceivesMessage(r) ==
   \E s \in AllDevices \ {r} :
   /\ Queues[s, r] /= <<>>
-  /\ Queues' = [Queues EXCEPT ![<<s, r>>] = Tail(Queues[s, r])]
+  /\ Queues' = [Queues EXCEPT ![<<s, r>>] = Tail(@)]
   /\ LET ReceivedMessage == Head(Queues[s, r])
      IN Members' = [x \in AllDevices |-> IF x = r
                                          THEN ReceivedMessage.members
