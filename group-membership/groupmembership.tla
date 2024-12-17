@@ -183,7 +183,7 @@ MembersKeepChatting ==
 
 DevicesKeepReceiving ==
   \A <<s, r>> \in DevicePairs :
-  /\ SF_vars(ReceivesMessage(s, r)) \* Change to Weak Fairness to allow the messages staying unfetched forever.
+  /\ WF_vars(ReceivesMessage(s, r))
 
 (* Devices do not add or remove members. *)
 NoMembershipChanges ==
