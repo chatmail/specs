@@ -46,11 +46,6 @@ class Relay:
                 # drain peer mailbox by reading messages from each sender separately
                 for msg in peer.from2mailbox.pop(from_peer, []):
                     assert peer.id != from_peer.id
-                    if peer.current_clock > msg.clock:
-                        print(
-                            f"{peer.id} c={peer.current_clock}, ignoring msg c={msg.clock}"
-                        )
-                        continue
                     receive_func = globals()[f"Receive{msg.typ}"]
                     print(f"receive {peer}")
                     print(f"    msg {msg}")
@@ -170,12 +165,12 @@ class DelMemberMessage(ChatMessage):
 
 
 def ReceiveChatMessage(peer, msg):
-    assert peer.id in msg.recipients and peer.current_clock <= msg.clock
+    assert peer.id in msg.recipients
+
     if peer.current_clock < msg.clock:
-        print(f"{peer.id} is outdated, using incoming memberslist")
+        print(f"{peer.id} is outdated, setting peer.members to msg.recipients")
         peer.members = msg.recipients
         peer.current_clock = msg.clock
-        print(f"-> NEWCLOCK: {peer.current_clock}")
     elif peer.current_clock == msg.clock:
         if peer.members.difference(msg.recipients):
             print(f"{peer.id} has different members than incoming same-clock message")
@@ -185,20 +180,27 @@ def ReceiveChatMessage(peer, msg):
 
 
 def ReceiveAddMemberMessage(peer, msg):
-    assert peer.id in msg.recipients and peer.current_clock <= msg.clock
-    peer.members.add(msg.payload["member"])
-    if peer.current_clock < msg.clock:
-        # the sender lives in the future; we add all its members
-        peer.members.update(msg.recipients)
-        peer.current_clock = msg.clock
+    assert peer.id in msg.recipients
 
-    if peer.current_clock == msg.clock:
-        if peer.members != msg.recipients:
-            peer.current_clock += 1
+    if peer.current_clock < msg.clock:
+        print(f"{peer.id} is outdated, setting peer.members to msg.recipients")
+        peer.members = msg.recipients
+        peer.current_clock = msg.clock
+    elif peer.current_clock >= msg.clock:
+        peer.members.add(msg.payload["member"])
+
+    if peer.current_clock == msg.clock and peer.members != msg.recipients:
+        peer.current_clock += 1
 
 
 def ReceiveDelMemberMessage(peer, msg):
-    assert peer.id in msg.recipients and peer.current_clock <= msg.clock
+    assert peer.id in msg.recipients
+
+    if peer.current_clock < msg.clock:
+        print(f"{peer.id} is outdated, setting peer.members to msg.recipients")
+        peer.members = msg.recipients
+        peer.current_clock = msg.clock
+
     member = msg.payload["member"]
     if member in peer.members:
         if peer.current_clock <= msg.clock:
