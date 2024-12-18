@@ -47,6 +47,25 @@ def test_concurrent_add():
     relay.assert_group_consistency()
 
 
+def test_concurrent_delete():
+    relay = Relay(numpeers=4)
+    p0, p1, p2, p3 = relay.get_peers()
+
+    immediate_create_group([p0, p1, p2, p3])
+    with relay.queue_all_and_deliver():
+        # concurrent addition of two group members
+        DelMemberMessage(p1, member=p2.id)
+        DelMemberMessage(p0, member=p3.id)
+
+    # p0 and p1 know now of each others additions
+    # so need to send a message to get overall consistent membership
+    with relay.queue_all_and_deliver():
+        ChatMessage(p0)
+
+    relay.assert_group_consistency()
+    assert p0.members == set(["p0", "p1"])
+
+
 def test_add_remove_and_stale_member_sends_chatmessage():
     relay = Relay(numpeers=4)
     p0, p1, p2, p3 = relay.get_peers()
