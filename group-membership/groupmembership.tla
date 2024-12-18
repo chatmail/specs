@@ -65,17 +65,20 @@ Init ==
 
 ----------------------------------------------------------------------------
 
+SendMessage(sender, recipients, msg) ==
+  Queues' = [<<s, r>> \in DevicePairs |->
+             IF s = sender /\ r \in recipients
+             THEN Append(Queues[s, r], msg)
+             ELSE Queues[s, r]]
+
 (* Device `d' sends a chat message. *)
 SendsChatMessage(d) ==
   /\ d \in Members[d]
   /\ UNCHANGED <<Members, clock>>
   /\ LET
-       NewMessage == ChatMessage(Members[d], clock[d])
+       msg == ChatMessage(Members[d], clock[d])
      IN
-       Queues' = [<<s, r>> \in DevicePairs |->
-                  IF s = d /\ r \in Members[d]
-                  THEN Append(Queues[s, r], NewMessage)
-                  ELSE Queues[s, r]]
+       SendMessage(d, Members[d], msg)
 
 (* Device `d' adds a member to the chat. *)
 AddsMember(d) ==
@@ -89,10 +92,7 @@ AddsMember(d) ==
           to == Members'[d]
           msg == MemberAddedMessage(to, m, clock'[d])
         IN
-          Queues' = [<<s, r>> \in DevicePairs |->
-                     IF s = d /\ (r \in Members[d] \/ r = m)
-                     THEN Append(Queues[s, r], msg)
-                     ELSE Queues[s, r]]
+          SendMessage(d, Members'[d], msg)
 
 RemovesMember(d) ==
   /\ d \in Members[d]
@@ -102,11 +102,7 @@ RemovesMember(d) ==
      /\ LET
           msg == MemberRemovedMessage(m, clock'[d])
         IN
-          Queues' = [<<s, r>> \in DevicePairs |->
-                     \* Removed member gets the message as well.
-                     IF s = d /\ (r \in Members[d])
-                     THEN Append(Queues[s, r], msg)
-                     ELSE Queues[s, r]]
+          SendMessage(d, Members[d], msg)
 
 ----------------------------------------------------------------------------
 
