@@ -181,11 +181,9 @@ def ReceiveAddMemberMessage(peer, msg):
 
     reset_peer_if_older(peer, msg)
 
-    if peer.clock >= msg.clock:
-        peer.members.add(msg.payload["member"])
+    peer.members.add(msg.payload["member"])
 
-    if peer.clock == msg.clock and peer.members != msg.recipients:
-        peer.clock += 1
+    inc_peer_clock_if_member_mismatch(peer, msg)
 
 
 def ReceiveDelMemberMessage(peer, msg):
@@ -193,9 +191,14 @@ def ReceiveDelMemberMessage(peer, msg):
 
     reset_peer_if_older(peer, msg)
 
-    if peer.clock <= msg.clock:
-        peer.members.remove(msg.payload["member"])
-        peer.clock = msg.clock
+    peer.members.discard(msg.payload["member"])
+
+    inc_peer_clock_if_member_mismatch(peer, msg)
+
+
+def inc_peer_clock_if_member_mismatch(peer, msg):
+    if peer.clock == msg.clock and peer.members != msg.recipients:
+        peer.clock += 1
 
 
 def reset_peer_if_older(peer, msg):
