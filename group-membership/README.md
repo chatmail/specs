@@ -16,6 +16,16 @@ We do not consider non-chat messages,
 for them we can assume that old list of recipients is the same
 as our current member list.
 
+## TLA+ model
+
+TLA+ model is stored in `groupmembership.tla`.
+
+Constraints are defined in the model instance stored in `MC.tla`
+and corresponding TLC configuration is in `MC.cfg`.
+
+The model can be checked using [TLC model checker](https://github.com/tlaplus/tlaplus)
+by running `tlc MC.tla`.
+
 ## Assumptions
 
 1. Devices send messages to each other over reliable FIFO channels.
