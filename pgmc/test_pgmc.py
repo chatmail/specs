@@ -14,7 +14,7 @@ def test_add_and_remove():
     # create group
     immediate_create_group([p0, p1])
     assert p0.members == p1.members == set([p0.id, p1.id])
-    assert p0.current_clock == p1.current_clock
+    assert p0.clock == p1.clock
 
     # add members
     with relay.queue_all_and_deliver():

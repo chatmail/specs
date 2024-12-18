@@ -20,7 +20,7 @@ class Relay:
             pending = sum(len(x) for x in peer.from2mailbox.values())
             members = ",".join(sorted(peer.members))
             off = " [OFFLINE]" if peer in self.offline_peers else ""
-            print(f"{peer_id} clock={peer.current_clock} members={members} {off}")
+            print(f"{peer_id} clock={peer.clock} members={members} {off}")
             for sender, pending in peer.from2mailbox.items():
                 for msg in pending:
                     print(f"   {sender.id} {msg}")
@@ -56,7 +56,7 @@ class Relay:
         peers = list(self.peers.values())
         for peer1, peer2 in zip(peers, peers[1:]):
             assert peer1.members == peer2.members
-            assert peer1.current_clock == peer2.current_clock
+            assert peer1.clock == peer2.clock
             nums = ",".join(sorted(peer1.members))
             print(f"{peer1.id} and {peer2.id} have same members {nums}")
 
@@ -87,7 +87,7 @@ class Peer:
         self.id = f"p{num}"
         self.members = set()
         self.from2mailbox = {}
-        self.current_clock = 0
+        self.clock = 0
 
     def __eq__(self, other):
         return self.id == other.id
@@ -96,7 +96,7 @@ class Peer:
         return int(self.id[1:])
 
     def __repr__(self):
-        clock = self.current_clock
+        clock = self.clock
         members = sorted(self.members)
         return f"{self.id} members={','.join(members)} c={clock}"
 
@@ -114,9 +114,9 @@ class IncomingMessage:
 
 def immediate_create_group(peers):
     for peer in peers:
-        assert peer.current_clock == 0
+        assert peer.clock == 0
         assert not peer.members
-        peer.current_clock = 1
+        peer.clock = 1
         peer.members = set([x.id for x in peers])
 
 
@@ -131,7 +131,7 @@ class ChatMessage:
         self.payload = payload
         self.before_send()
         self.recipients = set(self.sender.members)
-        self.clock = self.sender.current_clock
+        self.clock = self.sender.clock
         self.sender.relay.queue_message(self)
         self.after_send()
 
@@ -150,12 +150,12 @@ class ChatMessage:
 class AddMemberMessage(ChatMessage):
     def before_send(self):
         self.sender.members.add(self.payload["member"])
-        self.sender.current_clock += 1
+        self.sender.clock += 1
 
 
 class DelMemberMessage(ChatMessage):
     def before_send(self):
-        self.sender.current_clock += 1
+        self.sender.clock += 1
 
     def after_send(self):
         self.sender.members.remove(self.payload["member"])
@@ -167,42 +167,42 @@ class DelMemberMessage(ChatMessage):
 def ReceiveChatMessage(peer, msg):
     assert peer.id in msg.recipients
 
-    if peer.current_clock < msg.clock:
+    if peer.clock < msg.clock:
         print(f"{peer.id} is outdated, setting peer.members to msg.recipients")
         peer.members = msg.recipients
-        peer.current_clock = msg.clock
-    elif peer.current_clock == msg.clock:
+        peer.clock = msg.clock
+    elif peer.clock == msg.clock:
         if peer.members.difference(msg.recipients):
             print(f"{peer.id} has different members than incoming same-clock message")
             print(f"{peer.id} merging message recipients, and increase own clock")
             peer.members.update(msg.recipients)
-            peer.current_clock = msg.clock + 1
+            peer.clock = msg.clock + 1
 
 
 def ReceiveAddMemberMessage(peer, msg):
     assert peer.id in msg.recipients
 
-    if peer.current_clock < msg.clock:
+    if peer.clock < msg.clock:
         print(f"{peer.id} is outdated, setting peer.members to msg.recipients")
         peer.members = msg.recipients
-        peer.current_clock = msg.clock
-    elif peer.current_clock >= msg.clock:
+        peer.clock = msg.clock
+    elif peer.clock >= msg.clock:
         peer.members.add(msg.payload["member"])
 
-    if peer.current_clock == msg.clock and peer.members != msg.recipients:
-        peer.current_clock += 1
+    if peer.clock == msg.clock and peer.members != msg.recipients:
+        peer.clock += 1
 
 
 def ReceiveDelMemberMessage(peer, msg):
     assert peer.id in msg.recipients
 
-    if peer.current_clock < msg.clock:
+    if peer.clock < msg.clock:
         print(f"{peer.id} is outdated, setting peer.members to msg.recipients")
         peer.members = msg.recipients
-        peer.current_clock = msg.clock
+        peer.clock = msg.clock
 
     member = msg.payload["member"]
     if member in peer.members:
-        if peer.current_clock <= msg.clock:
+        if peer.clock <= msg.clock:
             peer.members.remove(member)
-            peer.current_clock = msg.clock
+            peer.clock = msg.clock
