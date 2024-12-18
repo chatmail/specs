@@ -112,6 +112,14 @@ class IncomingMessage:
         return f"from={self.sender_id} to={rec} c={self.clock} {abbr}"
 
 
+def immediate_create_group(peers):
+    for peer in peers:
+        assert peer.current_clock == 0
+        assert not peer.members
+        peer.current_clock = 1
+        peer.members = set([x.id for x in peers])
+
+
 #
 # Add/Del/Regular chat messages used for sending/queuing
 #
@@ -139,6 +147,23 @@ class ChatMessage:
         pass
 
 
+class AddMemberMessage(ChatMessage):
+    def before_send(self):
+        self.sender.members.add(self.payload["member"])
+        self.sender.current_clock += 1
+
+
+class DelMemberMessage(ChatMessage):
+    def before_send(self):
+        self.sender.current_clock += 1
+
+    def after_send(self):
+        self.sender.members.remove(self.payload["member"])
+
+
+# Receiving Chat/Add/Del messages
+
+
 def ReceiveChatMessage(peer, msg):
     if peer.current_clock < msg.clock:
         print(f"{peer.id} is outdated, using incoming memberslist")
@@ -155,12 +180,6 @@ def ReceiveChatMessage(peer, msg):
         print(f"{peer.id} has newer clock than incoming message")
 
 
-class AddMemberMessage(ChatMessage):
-    def before_send(self):
-        self.sender.members.add(self.payload["member"])
-        self.sender.current_clock += 1
-
-
 def ReceiveAddMemberMessage(peer, msg):
     assert peer.id in msg.recipients
     peer.members.add(msg.payload["member"])
@@ -174,25 +193,9 @@ def ReceiveAddMemberMessage(peer, msg):
             peer.current_clock += 1
 
 
-class DelMemberMessage(ChatMessage):
-    def before_send(self):
-        self.sender.current_clock += 1
-
-    def after_send(self):
-        self.sender.members.remove(self.payload["member"])
-
-
 def ReceiveDelMemberMessage(peer, msg):
     member = msg.payload["member"]
     if member in peer.members:
         if peer.current_clock <= msg.clock:
             peer.members.remove(member)
             peer.current_clock = msg.clock
-
-
-def immediate_create_group(peers):
-    for peer in peers:
-        assert peer.current_clock == 0
-        assert not peer.members
-        peer.current_clock = 1
-        peer.members = set([x.id for x in peers])
