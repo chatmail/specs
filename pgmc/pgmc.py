@@ -173,8 +173,8 @@ def ReceiveChatMessage(peer, msg):
     elif peer.current_clock == msg.clock:
         if peer.members.difference(msg.recipients):
             print(f"{peer.id} has different members than incoming same-clock message")
-            print(f"{peer.id} resetting to incoming recipients, and increase own clock")
-            peer.members = set(msg.recipients)
+            print(f"{peer.id} merging message recipients, and increase own clock")
+            peer.members.update(msg.recipients)
             peer.current_clock = msg.clock + 1
     else:
         print(f"{peer.id} has newer clock than incoming message")
