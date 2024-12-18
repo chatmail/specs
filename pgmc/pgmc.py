@@ -169,10 +169,10 @@ def ReceiveChatMessage(peer, msg):
 
     reset_peer_if_older(peer, msg)
 
-    if peer.clock == msg.clock and peer.members != msg.recipients:
+    if peer.clock == msg.clock and peer.members != sender_members(msg):
         print(f"{peer.id} has different members than incoming same-clock message")
         print(f"{peer.id} merging message recipients, and increase own clock")
-        peer.members.update(msg.recipients)
+        peer.members.update(sender_members(msg))
         peer.clock = msg.clock + 1
 
 
@@ -196,13 +196,20 @@ def ReceiveDelMemberMessage(peer, msg):
     inc_peer_clock_if_member_mismatch(peer, msg)
 
 
+def sender_members(msg):
+    if msg.typ == "DelMemberMessage":
+        return msg.recipients - {msg.payload["member"]}
+    else:
+        return msg.recipients
+
+
 def inc_peer_clock_if_member_mismatch(peer, msg):
-    if peer.clock == msg.clock and peer.members != msg.recipients:
+    if peer.clock == msg.clock and peer.members != sender_members(msg):
         peer.clock += 1
 
 
 def reset_peer_if_older(peer, msg):
     if peer.clock < msg.clock:
         print(f"{peer.id} is outdated, setting peer.members to msg.recipients")
-        peer.members = set(msg.recipients)
+        peer.members = set(sender_members(msg))
         peer.clock = msg.clock
