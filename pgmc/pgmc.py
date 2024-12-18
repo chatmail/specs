@@ -130,7 +130,7 @@ class ChatMessage:
         self.sender = sender
         self.payload = payload
         self.before_send()
-        self.recipients = set(self.sender.members)
+        self.recipients = frozenset(self.sender.members)
         self.clock = self.sender.clock
         self.sender.relay.queue_message(self)
         self.after_send()
@@ -204,5 +204,5 @@ def inc_peer_clock_if_member_mismatch(peer, msg):
 def reset_peer_if_older(peer, msg):
     if peer.clock < msg.clock:
         print(f"{peer.id} is outdated, setting peer.members to msg.recipients")
-        peer.members = msg.recipients
+        peer.members = set(msg.recipients)
         peer.clock = msg.clock
