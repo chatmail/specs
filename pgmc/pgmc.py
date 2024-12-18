@@ -167,26 +167,21 @@ class DelMemberMessage(ChatMessage):
 def ReceiveChatMessage(peer, msg):
     assert peer.id in msg.recipients
 
-    if peer.clock < msg.clock:
-        print(f"{peer.id} is outdated, setting peer.members to msg.recipients")
-        peer.members = msg.recipients
-        peer.clock = msg.clock
-    elif peer.clock == msg.clock:
-        if peer.members.difference(msg.recipients):
-            print(f"{peer.id} has different members than incoming same-clock message")
-            print(f"{peer.id} merging message recipients, and increase own clock")
-            peer.members.update(msg.recipients)
-            peer.clock = msg.clock + 1
+    reset_peer_if_older(peer, msg)
+
+    if peer.clock == msg.clock and peer.members != msg.recipients:
+        print(f"{peer.id} has different members than incoming same-clock message")
+        print(f"{peer.id} merging message recipients, and increase own clock")
+        peer.members.update(msg.recipients)
+        peer.clock = msg.clock + 1
 
 
 def ReceiveAddMemberMessage(peer, msg):
     assert peer.id in msg.recipients
 
-    if peer.clock < msg.clock:
-        print(f"{peer.id} is outdated, setting peer.members to msg.recipients")
-        peer.members = msg.recipients
-        peer.clock = msg.clock
-    elif peer.clock >= msg.clock:
+    reset_peer_if_older(peer, msg)
+
+    if peer.clock >= msg.clock:
         peer.members.add(msg.payload["member"])
 
     if peer.clock == msg.clock and peer.members != msg.recipients:
@@ -196,13 +191,15 @@ def ReceiveAddMemberMessage(peer, msg):
 def ReceiveDelMemberMessage(peer, msg):
     assert peer.id in msg.recipients
 
+    reset_peer_if_older(peer, msg)
+
+    if peer.clock <= msg.clock:
+        peer.members.remove(msg.payload["member"])
+        peer.clock = msg.clock
+
+
+def reset_peer_if_older(peer, msg):
     if peer.clock < msg.clock:
         print(f"{peer.id} is outdated, setting peer.members to msg.recipients")
         peer.members = msg.recipients
         peer.clock = msg.clock
-
-    member = msg.payload["member"]
-    if member in peer.members:
-        if peer.clock <= msg.clock:
-            peer.members.remove(member)
-            peer.clock = msg.clock
