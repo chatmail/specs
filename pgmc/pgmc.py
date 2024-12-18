@@ -66,8 +66,8 @@ class Relay:
         for peer_id in msg.recipients:
             peer = self.peers[peer_id]
             if peer_id == msg.sender.id:
-                continue
-            # serialize message for each peer
+                continue  # we don't send message to ourselves
+            # serialize message for each distinct peer
             msgdict = dict(
                 typ=msg.__class__.__name__,
                 recipients=msg.recipients.copy(),
@@ -109,7 +109,7 @@ class IncomingMessage:
     def __repr__(self):
         abbr = f"{self.typ}({self.payload.get('member', '')})"
         rec = ",".join(sorted(self.recipients))
-        return (f"from={self.sender_id} to={rec} c={self.clock} {abbr}")
+        return f"from={self.sender_id} to={rec} c={self.clock} {abbr}"
 
 
 #
@@ -146,7 +146,7 @@ def ReceiveChatMessage(peer, msg):
         peer.current_clock = msg.clock
         print(f"-> NEWCLOCK: {peer.current_clock}")
     elif peer.current_clock == msg.clock:
-        if peer.members != set(msg.recipients):
+        if peer.members.difference(msg.recipients):
             print(f"{peer.id} has different members than incoming same-clock message")
             print(f"{peer.id} resetting to incoming recipients, and increase own clock")
             peer.members = set(msg.recipients)
