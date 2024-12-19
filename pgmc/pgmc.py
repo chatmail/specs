@@ -65,7 +65,7 @@ class Relay:
                 typ=msg.__class__.__name__,
                 recipients=msg.recipients.copy(),
                 clock=msg.clock,
-                payload=msg.payload.copy(),
+                member=msg.member,
             )
             # provide per-sender buckets to allow modeling offline-ness for peers
             peer_mailbox = peer.from2mailbox.setdefault(msg.sender, [])
@@ -100,7 +100,7 @@ class IncomingMessage:
         self.__dict__.update(msgdict)
 
     def __repr__(self):
-        abbr = f"{self.typ}({self.payload.get('member', '')})"
+        abbr = f"{self.typ}({self.member})"
         rec = ",".join(sorted(self.recipients))
         return f"from={self.sender_id} to={rec} c={self.clock} {abbr}"
 
@@ -119,9 +119,10 @@ def immediate_create_group(peers):
 
 
 class ChatMessage:
-    def __init__(self, sender, **payload):
+    def __init__(self, sender, member=None):
         self.sender = sender
-        self.payload = payload
+        assert self.__class__ == ChatMessage or member is not None
+        self.member = member
         self.before_send()
         self.recipients = frozenset(self.sender.members)
         self.clock = self.sender.clock
@@ -131,7 +132,7 @@ class ChatMessage:
     def __repr__(self):
         nums = ",".join(self.sender.members)
         name = self.__class__.__name__
-        return f"<{name} clock={self.clock} {self.sender.id}->{nums} {self.payload}>"
+        return f"<{name} clock={self.clock} {self.sender.id}->{nums} {self.member}>"
 
     def before_send(self):
         pass
@@ -142,7 +143,7 @@ class ChatMessage:
 
 class AddMemberMessage(ChatMessage):
     def before_send(self):
-        self.sender.members.add(self.payload["member"])
+        self.sender.members.add(self.member)
         self.sender.clock += 1
 
 
@@ -151,7 +152,7 @@ class DelMemberMessage(ChatMessage):
         self.sender.clock += 1
 
     def after_send(self):
-        self.sender.members.remove(self.payload["member"])
+        self.sender.members.remove(self.member)
 
 
 # Receiving Chat/Add/Del messages
@@ -181,14 +182,14 @@ def ReceiveAddMemberMessage(peer, msg):
         # Increase the clock
         # if member addition produced a new member list
         # that possibly does not exist on other peers.
-        if msg.payload["member"] not in peer.members:
-            peer.members.add(msg.payload["member"])
+        if msg.member not in peer.members:
+            peer.members.add(msg.member)
             peer.clock += 1
     else:
         # There is another peer with higher clock already,
         # don't bother increasing our clock
         # but accept the new member.
-        peer.members.add(msg.payload["member"])
+        peer.members.add(member)
 
 
 def ReceiveDelMemberMessage(peer, msg):
@@ -198,15 +199,15 @@ def ReceiveDelMemberMessage(peer, msg):
         peer.members = set(sender_members(msg))
         peer.clock = msg.clock
     elif msg.clock == peer.clock:
-        if msg.payload["member"] in peer.members:
-            peer.members.discard(msg.payload["member"])
+        if msg.member in peer.members:
+            peer.members.discard(msg.member)
             peer.clock += 1
     else:
-        peer.members.discard(msg.payload["member"])
+        peer.members.discard(msg.member)
 
 
 def sender_members(msg):
     if msg.typ == "DelMemberMessage":
-        return msg.recipients - {msg.payload["member"]}
+        return msg.recipients - {msg.member}
     else:
         return msg.recipients
