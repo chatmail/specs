@@ -114,9 +114,7 @@ RemovesMember(d) ==
 ReceiveMemberAdded(s, r) ==
   /\ Queues[s, r] /= <<>>
   /\ Queues' = [Queues EXCEPT ![s, r] = Tail(@)]
-  /\ LET
-       msg == Head(Queues[s, r])
-       selfAdded == r \notin Members[r] /\ msg.member = r
+  /\ LET msg == Head(Queues[s, r])
      IN /\ msg.type = "add"
         /\ \/ msg.clock > clock[r] /\ Members' = [Members EXCEPT ![r] = msg.to]
                                    /\ clock' = [clock EXCEPT ![r] = msg.clock]
