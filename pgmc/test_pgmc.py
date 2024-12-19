@@ -1,3 +1,6 @@
+import itertools
+
+import pgmc
 from pgmc import (
     immediate_create_group,
     AddMemberMessage,
@@ -5,6 +8,18 @@ from pgmc import (
     ChatMessage,
     Relay,
 )
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def override_time(monkeypatch):
+    count = itertools.count()
+
+    def pseudo_current_timestamp():
+        return 100 + next(count)
+
+    monkeypatch.setattr(pgmc, "current_timestamp", pseudo_current_timestamp)
 
 
 def test_add_and_remove():
@@ -14,7 +29,6 @@ def test_add_and_remove():
     # create group
     immediate_create_group([p0, p1])
     assert p0.members == p1.members == set([p0.id, p1.id])
-    assert p0.clock == p1.clock
 
     # add members
     AddMemberMessage(p0, member=p2.id)
@@ -140,3 +154,4 @@ def test_removed_member_removes_another_while_offline():
 
     relay.assert_group_consistency()
     assert p0.members == {"p0", "p1", "p2", "p3", "p4"}
+    relay.dump("123")
