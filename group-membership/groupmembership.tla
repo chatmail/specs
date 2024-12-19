@@ -141,21 +141,17 @@ ReceiveChatMessage(s, r) ==
   /\ LET msg == Head(Queues[s, r])
      IN /\ msg.type = "chat"
         (* Handle implicit member additions and removals. *)
-        /\ Members' = [Members EXCEPT ![r]=
-                       IF msg.clock > clock[r]
-                       THEN msg.to
-                       ELSE IF msg.clock = clock[r]
-                         (* Tiebreaker to achieve eventual consistency.
-                            Preferring additions over removal by
-                            using union instead of intersection. *)
-                       THEN msg.to \union @
-                       ELSE @]
-        /\ clock' = [clock EXCEPT ![r]=
-                     IF msg.clock > @
-                     THEN msg.clock
-                     ELSE IF msg.clock = @ /\ ~(UNCHANGED Members)
-                     THEN msg.clock + 1
-                     ELSE @]
+        /\ \/ msg.clock < clock[r] /\ UNCHANGED <<Members, clock>>
+           \/ msg.clock > clock[r] /\ Members' = [Members EXCEPT ![r] = msg.to]
+                                   /\ clock' = [clock EXCEPT ![r] = msg.clock]
+              (* Tiebreaker to achieve eventual consistency.
+                 Preferring additions over removal by
+                 using union instead of intersection. *)
+           \/ msg.clock = clock[r] /\ Members' = [Members EXCEPT ![r] = @ \union msg.to]
+                                   /\ clock' = [clock EXCEPT ![r] =
+                                                IF UNCHANGED Members
+                                                THEN @
+                                                ELSE @ + 1]
 
 ReceivesMessage(s, r) ==
   \/ ReceiveMemberAdded(s, r)
