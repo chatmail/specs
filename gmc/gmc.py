@@ -188,6 +188,7 @@ class DelMemberMessage(ChatMessage):
 
 
 # Receiving Chat/Add/Del messages
+# each of which can cause group membership updates
 
 
 def update_peer_from_incoming_message(peer, msg):
