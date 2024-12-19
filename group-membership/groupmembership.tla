@@ -190,6 +190,13 @@ GroupConsistency ==
   \/ d2 \notin Members[d2]
   \/ Members[d1] = Members[d2]
 
+(* If some device `d1' thinks it is not in the chat,
+   then any other device `d2` which thinks it is in the chat
+   must think that `d1' not in the chat. *)
+NoStaleMembers ==
+  \A d1, d2 \in AllDevices :
+  (d1 \notin Members[d1] /\ d2 \in Members[d2]) => (d1 \notin Members[d2])
+
 (* All devices which can chat keep chatting. *)
 MembersKeepChatting ==
   \A d \in AllDevices :
@@ -215,7 +222,7 @@ EventualConsistencyProperty ==
    /\ MembersKeepChatting
    /\ DevicesKeepReceiving
    /\ EventuallyNoMembershipChanges)
-   => <>[]GroupConsistency
+   => <>[](GroupConsistency /\ NoStaleMembers)
 
 
 =============================================================================
