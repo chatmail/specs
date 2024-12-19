@@ -36,7 +36,7 @@ AllDevices ==
    so newely added member has a complete member list.
    For "Member removed" message the `^To:^' field is not needed. *)
 MemberAddedMessage(t, m, c) == [type |-> "add", to |-> t, member |-> m, clock |-> c]
-MemberRemovedMessage(m, c) == [type |-> "remove", member |-> m, clock |-> c]
+MemberRemovedMessage(t, m, c) == [type |-> "remove", to |-> t, member |-> m, clock |-> c]
 ChatMessage(t, c) == [type |-> "chat", to |-> t, clock |-> c]
 
 (* The set of all possible messages.
@@ -46,7 +46,8 @@ ChatMessage(t, c) == [type |-> "chat", to |-> t, clock |-> c]
 Messages ==
   {MemberAddedMessage(t, m, c) :
    <<t, m, c>> \in (SUBSET AllDevices) \X AllDevices \X Clock} \union
-  {MemberRemovedMessage(m, c) : <<m, c>> \in AllDevices \X Clock} \union
+  {MemberRemovedMessage(t, m, c) :
+   <<t, m, c>> \in (SUBSET AllDevices) \X AllDevices \X Clock} \union
   {ChatMessage(t, c) : <<t, c>> \in (SUBSET AllDevices) \X Clock}
 
 (* Pairs of devices excluding pairs of devices with self. *)
@@ -100,7 +101,9 @@ RemovesMember(d) ==
      /\ Members' = [Members EXCEPT ![d] = Members[d] \ {m}]
      /\ clock' = [clock EXCEPT ![d] = @ + 1]
      /\ LET
-          msg == MemberRemovedMessage(m, clock'[d])
+          to == Members'[d] (* Removed member is not included in the To field
+                               but will receive the message. *)
+          msg == MemberRemovedMessage(to, m, clock'[d])
         IN
           SendMessage(d, Members[d], msg)
 
