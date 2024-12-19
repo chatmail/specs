@@ -107,5 +107,10 @@ for r in range(n_actors):
 
 
 for actor in range(n_actors - 1):
-    print(members[actor])
-    assert members[actor] == members[actor + 1]
+    print(f"actor #{actor}: {members[actor]}")
+    print(f"actor #{actor+1}: {members[actor+1]}")
+
+for actor in range(n_actors - 1):
+    assert members[actor] == members[actor + 1], f"actor #{actor} != #{actor+1}"
+
+print("algorithm achieved immediate consistency")
