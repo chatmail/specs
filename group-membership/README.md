@@ -168,69 +168,38 @@ The following state transitions can happen during the simulation:
 
 4. Device reads one message from one of its FIFO channels.
 
-# Algorithms
+# Algorithm
 
-Possible algorithms
-mainly differ in how they process
-received messages.
+Each device maintains a logical clock for the chat.
+Clock value is initialized to 0.
 
-## Always accept the `To:` field
+Current clock value is included in each message
+together with the new member list.
 
-The simplest algorithm is to always accept the `To:` field as the new memberlist.
-This fails both eventual consistency property and immediate consistency property.
+When device adds or removes a member,
+it increases the clock by 1 before sending the message.
 
-Counterexample for eventual consistency found with TLC:
+When receiving a chat message,
+receiver compares its clock value
+with the message clock.
 
-There are 3 devices:
-Creator, Alice and Bob.
+If clock value in the message
+is higher than the receiver clock value,
+receiver sets the clock with the value from the message
+and replaces its local member list
+with the member list from the message.
 
-1. Creator creates a chat.
-2. Creator adds Alice to the chat.
-   Now Alice has one incoming message with {Alice, Creator} in the `To:` field.
-3. Alice receives a message.
-   Now there are no messages in the network,
-   Alice and Creator have the same memberlist {Alice, Creator}.
-4. Creator adds Bob.
-   Now both Alice and Bob have pending "Member added" message
-   in their inboxes.
-5. Bob receives member added message.
-   Alice has memberlist {Alice, Creator}.
-   Bob has memberlist {Alice, Bob, Creator}.
-   Creator has memberlist {Ailce, Bob, Creator}.
-6. Alice sends a chat message to {Alice, Creator}.
-   It drops into Creator's inbox who now has one unread message.
-7. Alice finally reads "Member added message".
-   Everything is now consistent,
-   everyone has memberlist {Alice, Bob, Creator}.
-   But Creator still has a message from Alice
-   to {Alice, Creator} in the inbox.
-8. Bob sends a chat message.
-   Now Alice has one unread message
-   from Bob to {Alice, Bob, Creator}
-   and Creator has unread message
-   from Bob to {Alice, Bob, Creator}
-   plus old message from Alice to {Alice, Creator}.
-9. Creator reads Alice's message
-   and now has memberlist {Alice, Creator}.
-10. Creator sends a chat message
-    (to Alice only).
-    Now Alice has one unread message from Bob
-    to {Alice, Bob, Creator}
-    and one message from Creator to {Alice, Creator}.
-    Creator still has unread message from Bob
-    to {Alice, Bob, Creator}.
-11. Creator reads message from Bob.
-12. Alice reads message from Creator.
+If clock value in the message
+is lower than the receiver clock value,
+then the receier ignores the message
+and keeps its own clock value and member list.
 
-    Now Alice has {Ailce, Creator}
-    as a memberlist,
-    Bob and Creator have {Alice, Bob, Creator}
-    and there is still a message
-    in Alice's queue from Bob
-    to {Ailce, Bob, Creator}.
-13. Alice sends a message to chat,
-    adding a message from Alice
-    to {Alice, Creator}
-    to Creator's inbox.
-14. Loop back to state 7
-    by Alice reading message from Bob.
+If clock value in the message
+is the same as the receiver clock value,
+receiver updates its own member list
+with the member list from the message
+by taking an union of the member lists
+and increases its clock by 1.
+
+TODO: specify processing of "Member added"
+and "Member removed" messages.
