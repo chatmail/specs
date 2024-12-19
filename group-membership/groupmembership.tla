@@ -32,9 +32,9 @@ AllDevices ==
 (* Messages. *)
 (*************)
 
-(* "Member added" message has the `^To:^' field
-   so newely added member has a complete member list.
-   For "Member removed" message the `^To:^' field is not needed. *)
+(* Each message has the clock and the "To" field.
+   "To" field contains the member list at the time of sending,
+   so for the "Member removed" it does not include the removed member. *)
 MemberAddedMessage(t, m, c) == [type |-> "add", to |-> t, member |-> m, clock |-> c]
 MemberRemovedMessage(t, m, c) == [type |-> "remove", to |-> t, member |-> m, clock |-> c]
 ChatMessage(t, c) == [type |-> "chat", to |-> t, clock |-> c]
