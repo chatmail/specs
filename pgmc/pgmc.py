@@ -189,11 +189,12 @@ def ReceiveAddMemberMessage(peer, msg):
 def ReceiveDelMemberMessage(peer, msg):
     assert peer.id in msg.recipients
 
-    reset_peer_if_older(peer, msg)
-
-    peer.members.discard(msg.payload["member"])
-
-    inc_peer_clock_if_member_mismatch(peer, msg)
+    if peer.clock < msg.clock:
+        peer.members = set(sender_members(msg))
+        peer.clock = msg.clock
+    elif msg.payload["member"] in peer.members:
+        peer.members.discard(msg.payload["member"])
+        peer.clock += 1
 
 
 def sender_members(msg):
