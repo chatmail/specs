@@ -11,7 +11,7 @@ import pytest
 
 
 @pytest.mark.parametrize(
-    "n_actors,n_contacts,steps", [(2, 2, 20), (10, 20, 500), (20, 3, 500)]
+    "n_actors,n_contacts,steps", [(2, 2, 20), (10, 50, 500), (20, 3, 500)]
 )
 def test_immediate_consistency(n_actors, n_contacts, steps):
     # Actors who are going to add/remove contacts

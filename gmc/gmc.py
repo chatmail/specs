@@ -85,20 +85,22 @@ class Relay:
         assert isinstance(msg, ChatMessage)
         print(f"queueing {msg}")
         for peer_id in msg.recipients:
-            peer = self.peers[peer_id]
             if peer_id == msg.sender.id:
                 continue  # we don't send message to ourselves
-            # serialize message for each distinct peer
-            msgdict = dict(
-                typ=msg.__class__.__name__,
-                recipients=msg.recipients.copy(),
-                lastchanged=msg.lastchanged.copy(),
-                member=msg.member,
+
+            # create a distinct message object for each receiving peer
+            incoming_msg = IncomingMessage(
+                sender_id=msg.sender.id,
+                msgdict=dict(
+                    typ=msg.__class__.__name__,
+                    recipients=msg.recipients.copy(),
+                    lastchanged=msg.lastchanged.copy(),
+                    member=msg.member,
+                ),
             )
             # provide per-sender buckets to allow modeling offline-ness for peers
+            peer = self.peers[peer_id]
             peer_mailbox = peer.from2mailbox.setdefault(msg.sender, [])
-            # create a distinct message object for each receiving peer
-            incoming_msg = IncomingMessage(sender_id=msg.sender.id, msgdict=msgdict)
             peer_mailbox.append(incoming_msg)
 
 
