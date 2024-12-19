@@ -1,7 +1,7 @@
 import itertools
 
-import pgmc
-from pgmc import (
+import gmc
+from gmc import (
     immediate_create_group,
     AddMemberMessage,
     DelMemberMessage,
@@ -19,7 +19,7 @@ def override_time(monkeypatch):
     def pseudo_current_timestamp():
         return 100 + next(count)
 
-    monkeypatch.setattr(pgmc, "current_timestamp", pseudo_current_timestamp)
+    monkeypatch.setattr(gmc, "current_timestamp", pseudo_current_timestamp)
 
 
 def test_add_and_remove():
