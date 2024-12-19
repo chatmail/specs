@@ -118,12 +118,13 @@ ReceiveMemberAdded(s, r) ==
        msg == Head(Queues[s, r])
        selfAdded == r \notin Members[r] /\ msg.member = r
      IN /\ msg.type = "add"
-        /\ Members' = [Members EXCEPT ![r]=IF selfAdded
-                       THEN msg.to
-                       ELSE @ \union {msg.member}]
-        /\ clock' = [clock EXCEPT ![r]=IF msg.clock > @
-                                       THEN msg.clock
-                                       ELSE @]
+        /\ \/ msg.clock > clock[r] /\ Members' = [Members EXCEPT ![r] = msg.to]
+                                   /\ clock' = [clock EXCEPT ![r] = msg.clock]
+           \/ msg.clock <= clock[r] /\ Members' = [Members EXCEPT ![r] = @ \union {msg.member}]
+                                    /\ clock' = [clock EXCEPT ![r] =
+                                                 IF UNCHANGED Members
+                                                 THEN @
+                                                 ELSE @ + 1]
 
 ReceiveMemberRemoved(s, r) ==
   /\ Queues[s, r] /= <<>>
