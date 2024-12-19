@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import random
-import copy
 
 # Actors who are going to add/remove contacts
 # and send messages about this to each other.
