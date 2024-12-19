@@ -74,7 +74,7 @@ for _t in range(1, 50):
         members[actor].add(contact_id)
         clock[actor] += 1
         msg = {
-            "action": "remove",
+            "action": "add",
             "to": frozenset(members[actor]),
             "clock": clock[actor],
             "member": contact_id,
