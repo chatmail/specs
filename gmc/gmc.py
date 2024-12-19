@@ -61,10 +61,11 @@ class Relay:
     def assert_group_consistency(self, peers=None):
         if peers is None:
             peers = list(x for x in self.peers.values() if x.id in x.members)
-            # checking that actors do not contain peers who themselves think they are not members
-            left_peers = list(x for x in self.peers.values() if x.id not in x.members)
-            for peer in peers:
-                assert not peer.members.intersection(left_peers)
+
+        # checking that actors do not contain peers who themselves think they are not members
+        left_peers = list(x for x in self.peers.values() if x.id not in x.members)
+        for peer in peers:
+            assert not peer.members.intersection(left_peers)
 
         # checking that all peers have the same member list
         ok = True
