@@ -184,9 +184,18 @@ def ReceiveAddMemberMessage(peer, msg):
     if msg.clock > peer.clock:
         peer.members = set(sender_members(msg))
         peer.clock = msg.clock
-    elif msg.payload["member"] not in peer.members:
+    elif msg.clock == peer.clock:
+        # Increase the clock
+        # if member addition produced a new member list
+        # that possibly does not exist on other peers.
+        if msg.payload["member"] not in peer.members:
+            peer.members.add(msg.payload["member"])
+            peer.clock += 1
+    else:
+        # There is another peer with higher clock already,
+        # don't bother increasing our clock
+        # but accept the new member.
         peer.members.add(msg.payload["member"])
-        peer.clock += 1
 
 
 def ReceiveDelMemberMessage(peer, msg):
@@ -195,9 +204,12 @@ def ReceiveDelMemberMessage(peer, msg):
     if msg.clock > peer.clock:
         peer.members = set(sender_members(msg))
         peer.clock = msg.clock
-    elif msg.payload["member"] in peer.members:
+    elif msg.clock == peer.clock:
+        if msg.payload["member"] in peer.members:
+            peer.members.discard(msg.payload["member"])
+            peer.clock += 1
+    else:
         peer.members.discard(msg.payload["member"])
-        peer.clock += 1
 
 
 def sender_members(msg):
