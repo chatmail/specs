@@ -131,13 +131,13 @@ ReceiveMemberRemoved(s, r) ==
   /\ Queues' = [Queues EXCEPT ![s, r] = Tail(@)]
   /\ LET msg == Head(Queues[s, r])
      IN /\ msg.type = "remove"
-        /\ \/ msg.clock <= clock[r] /\ Members' = [Members EXCEPT ![r] = @ \ {msg.member}]
+        /\ \/ msg.clock > clock[r] /\ Members' = [Members EXCEPT ![r] = msg.to]
+                                   /\ clock' = [clock EXCEPT ![r] = msg.clock]
+           \/ msg.clock <= clock[r] /\ Members' = [Members EXCEPT ![r] = @ \ {msg.member}]
                                     /\ clock' = [clock EXCEPT ![r] =
                                                  IF UNCHANGED Members
                                                  THEN @
                                                  ELSE @ + 1]
-           \/ msg.clock > clock[r] /\ Members' = [Members EXCEPT ![r] = msg.to]
-                                   /\ clock' = [clock EXCEPT ![r] = msg.clock]
 
 ReceiveChatMessage(s, r) ==
   /\ Queues[s, r] /= <<>>
@@ -145,9 +145,9 @@ ReceiveChatMessage(s, r) ==
   /\ LET msg == Head(Queues[s, r])
      IN /\ msg.type = "chat"
         (* Handle implicit member additions and removals. *)
-        /\ \/ msg.clock < clock[r] /\ UNCHANGED <<Members, clock>>
-           \/ msg.clock > clock[r] /\ Members' = [Members EXCEPT ![r] = msg.to]
+        /\ \/ msg.clock > clock[r] /\ Members' = [Members EXCEPT ![r] = msg.to]
                                    /\ clock' = [clock EXCEPT ![r] = msg.clock]
+           \/ msg.clock < clock[r] /\ UNCHANGED <<Members, clock>>
               (* Tiebreaker to achieve eventual consistency.
                  Preferring additions over removal by
                  using union instead of intersection. *)
