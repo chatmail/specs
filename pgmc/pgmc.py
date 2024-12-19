@@ -1,4 +1,5 @@
 import contextlib
+import itertools
 
 
 class Relay:
@@ -12,45 +13,38 @@ class Relay:
         return self.peers.values()
 
     def dump(self, title):
-        print()
-        print("#")
-        print(f"# {title}")
-        print("#")
         for peer_id, peer in self.peers.items():
             pending = sum(len(x) for x in peer.from2mailbox.values())
             members = ",".join(sorted(peer.members))
-            off = " [OFFLINE]" if peer in self.offline_peers else ""
-            print(f"{peer_id} clock={peer.clock} members={members} {off}")
+            print(f"{peer_id} clock={peer.clock} members={members}")
             for sender, pending in peer.from2mailbox.items():
                 for msg in pending:
                     print(f"   {sender.id} {msg}")
         print()
 
-    @contextlib.contextmanager
-    def queue_all_and_deliver(self, offline=None):
-        self.offline_peers = set(offline) if offline else set()
-        print("## Queuing messages")
-        yield
-        self.dump("before message delivery")
-        self._receive_all()
-        self.dump("after message delivery")
-        self.offline_peers.clear()
+    def receive_messages(self, notreceive=None, notfrom=None):
+        """receive messages on all 'peers' (all if not specified)
+        except from 'notfrom' peers where messages are kept pending."""
+        notreceive = set(notreceive) if notreceive else set()
+        notfrom = set(notfrom) if notfrom else set()
 
-    def _receive_all(self):
-        for peer in self.peers.values():
-            if peer in self.offline_peers:
+        print("# BEGIN RECEIVING MESSAGES")
+        print(f"# notreceive={sorted([p.id for p in notreceive])}")
+        print(f"# notfrom={[p.id for p in notfrom]}")
+        for peer, from_peer in itertools.product(self.get_peers(), self.get_peers()):
+            if from_peer in notfrom or peer in notreceive:
                 continue
-            for from_peer in self.peers.values():
-                if from_peer in self.offline_peers:
-                    continue
-                # drain peer mailbox by reading messages from each sender separately
-                for msg in peer.from2mailbox.pop(from_peer, []):
-                    assert peer.id != from_peer.id
-                    receive_func = globals()[f"Receive{msg.typ}"]
-                    print(f"receive {peer}")
-                    print(f"    msg {msg}")
-                    receive_func(peer, msg)
-                    print(f"    new {peer}")
+
+            # drain peer mailbox by reading messages from each sender separately
+            for msg in peer.from2mailbox.pop(from_peer, []):
+                assert peer.id != from_peer.id, "messages sent to self not supported"
+                receive_func = globals()[f"Receive{msg.typ}"]
+                print(f"receive {peer}")
+                print(f"    msg {msg}")
+                receive_func(peer, msg)
+                print(f"    new {peer}")
+        print("# FINISH RECEIVING MESSAGES")
+        print()
 
     def assert_group_consistency(self):
         peers = list(self.peers.values())

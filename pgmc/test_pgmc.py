@@ -17,15 +17,14 @@ def test_add_and_remove():
     assert p0.clock == p1.clock
 
     # add members
-    with relay.queue_all_and_deliver():
-        AddMemberMessage(p0, member=p2.id)
-        AddMemberMessage(p0, member=p3.id)
-
+    AddMemberMessage(p0, member=p2.id)
+    AddMemberMessage(p0, member=p3.id)
+    relay.receive_messages()
     relay.assert_group_consistency()
 
-    with relay.queue_all_and_deliver():
-        DelMemberMessage(p3, member=p0.id)
-
+    # del member
+    DelMemberMessage(p3, member=p0.id)
+    relay.receive_messages()
     relay.assert_group_consistency()
 
 
@@ -34,15 +33,16 @@ def test_concurrent_add():
     p0, p1, p2, p3 = relay.get_peers()
 
     immediate_create_group([p0, p1])
-    with relay.queue_all_and_deliver():
-        # concurrent addition of two group members
-        AddMemberMessage(p1, member=p2.id)
-        AddMemberMessage(p0, member=p3.id)
+
+    # concurrent addition of two group members
+    AddMemberMessage(p1, member=p2.id)
+    AddMemberMessage(p0, member=p3.id)
+    relay.receive_messages()
 
     # p0 and p1 know now of each others additions
     # so need to send a message to get overall consistent membership
-    with relay.queue_all_and_deliver():
-        ChatMessage(p0)
+    ChatMessage(p0)
+    relay.receive_messages()
 
     relay.assert_group_consistency()
 
@@ -52,15 +52,16 @@ def test_concurrent_delete():
     p0, p1, p2, p3 = relay.get_peers()
 
     immediate_create_group([p0, p1, p2, p3])
-    with relay.queue_all_and_deliver():
-        # concurrent addition of two group members
-        DelMemberMessage(p1, member=p2.id)
-        DelMemberMessage(p0, member=p3.id)
+
+    # concurrent deletion of two group members
+    DelMemberMessage(p1, member=p2.id)
+    DelMemberMessage(p0, member=p3.id)
+    relay.receive_messages()
 
     # p0 and p1 know now of each others additions
     # so need to send a message to get overall consistent membership
-    with relay.queue_all_and_deliver():
-        ChatMessage(p0)
+    ChatMessage(p0)
+    relay.receive_messages()
 
     relay.assert_group_consistency()
     assert p0.members == set(["p0", "p1"])
@@ -73,17 +74,17 @@ def test_add_remove_and_stale_member_sends_chatmessage():
     immediate_create_group([p0, p1, p2, p3])
 
     # p0 deleted p2 while p3 is offline
-    with relay.queue_all_and_deliver(offline=[p3]):
-        DelMemberMessage(p0, member=p2.id)
+    DelMemberMessage(p0, member=p2.id)
+    relay.receive_messages(notreceive=[p3])
 
     # offline p3 sends a message with old memberlist and goes online
-    with relay.queue_all_and_deliver():
-        ChatMessage(p3)
+    ChatMessage(p3)
+    relay.receive_messages()
 
     relay.assert_group_consistency()
 
-    with relay.queue_all_and_deliver():
-        ChatMessage(p0)
+    ChatMessage(p0)
+    relay.receive_messages()
 
     assert p0.members == set(["p0", "p1", "p3"])
 
@@ -94,16 +95,17 @@ def test_add_remove_and_stale_member_sends_addition():
 
     immediate_create_group([p0, p1, p2, p3])
 
-    with relay.queue_all_and_deliver(offline=[p3]):
-        DelMemberMessage(p0, member=p2.id)
+    DelMemberMessage(p0, member=p2.id)
+    relay.receive_messages(notreceive=[p3])
 
     # offline p3 sends a message with old memberlist and goes online
-    with relay.queue_all_and_deliver():
-        AddMemberMessage(p3, member=p4.id)
+    AddMemberMessage(p3, member=p4.id)
+    relay.receive_messages()
 
     # we need a chat message from a higher clock state to heal consistency
-    with relay.queue_all_and_deliver():
-        ChatMessage(p0)
+    ChatMessage(p0)
+    relay.receive_messages()
+
     relay.assert_group_consistency()
     assert p0.members == set(["p0", "p1", "p3", "p4"])
 
@@ -114,12 +116,11 @@ def test_simple_removals_while_offline():
 
     immediate_create_group([p0, p1, p2, p3, p4, p5, p6])
 
-    with relay.queue_all_and_deliver(offline=[p2, p3]):
-        DelMemberMessage(p0, member=p5.id)
-        DelMemberMessage(p1, member=p6.id)
+    DelMemberMessage(p0, member=p5.id)
+    DelMemberMessage(p1, member=p6.id)
+    relay.receive_messages(notreceive=[p2, p3])
 
-    with relay.queue_all_and_deliver():
-        pass
+    relay.receive_messages()
     relay.dump("all online again")
     relay.assert_group_consistency()
 
@@ -130,12 +131,12 @@ def test_removed_member_removes_another_while_offline():
 
     immediate_create_group([p0, p1, p2, p3, p4, p5, p6])
 
-    with relay.queue_all_and_deliver(offline=[p5]):
-        DelMemberMessage(p0, member=p5.id)
-        DelMemberMessage(p5, member=p6.id)
+    DelMemberMessage(p0, member=p5.id)
+    DelMemberMessage(p5, member=p6.id)
+    relay.receive_messages(notreceive=[p5])
 
-    with relay.queue_all_and_deliver():
-        ChatMessage(p0)
+    ChatMessage(p0)
+    relay.receive_messages()
 
     relay.assert_group_consistency()
     assert p0.members == {"p0", "p1", "p2", "p3", "p4"}
