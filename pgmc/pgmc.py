@@ -179,11 +179,11 @@ def ReceiveChatMessage(peer, msg):
 def ReceiveAddMemberMessage(peer, msg):
     assert peer.id in msg.recipients
 
-    reset_peer_if_older(peer, msg)
-
-    peer.members.add(msg.payload["member"])
-
-    if peer.clock == msg.clock and peer.members != sender_members(msg):
+    if peer.clock < msg.clock:
+        peer.members = set(sender_members(msg))
+        peer.clock = msg.clock
+    elif msg.payload["member"] not in peer.members:
+        peer.members.add(msg.payload["member"])
         peer.clock += 1
 
 
