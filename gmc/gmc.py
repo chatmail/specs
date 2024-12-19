@@ -1,7 +1,6 @@
 from datetime import datetime
 import itertools
 from pprint import pprint
-import copy
 
 
 def current_timestamp():
@@ -39,25 +38,41 @@ class Relay:
         print(f"# notreceive={sorted([p.id for p in notreceive])}")
         print(f"# notfrom={[p.id for p in notfrom]}")
         for peer, from_peer in itertools.product(self.get_peers(), self.get_peers()):
-            if from_peer in notfrom or peer in notreceive:
-                continue
-
-            # drain peer mailbox by reading messages from each sender separately
-            for msg in peer.from2mailbox.pop(from_peer, []):
-                assert peer.id != from_peer.id, "messages sent to self not supported"
-                print(f"receive {peer}")
-                print(f"    msg {msg}")
-                update_peer_from_incoming_message(peer, msg)
-                print(f"    new {peer}")
+            if from_peer not in notfrom and peer not in notreceive:
+                self._drain_mailbox(peer, from_peer)
         print("# FINISH RECEIVING MESSAGES")
         print()
 
+    def _drain_mailbox(self, peer, from_peer, num=-1):
+        # drain peer mailbox by reading messages from each sender separately
+        while num != 0:
+            queue = peer.from2mailbox.get(from_peer, [])
+            if not queue:
+                peer.from2mailbox.pop(from_peer, None)
+                break
+            num = num - 1
+            msg = queue.pop(0)
+            assert peer.id != from_peer.id, "messages sent to self not supported"
+            print(f"receive {peer}")
+            print(f"    msg {msg}")
+            update_peer_from_incoming_message(peer, msg)
+            print(f"    new {peer}")
+
     def assert_group_consistency(self):
-        peers = list(self.peers.values())
+        peers = list(x for x in self.peers.values() if x.id in x.members)
+        ok = True
         for peer1, peer2 in zip(peers, peers[1:]):
-            assert peer1.members == peer2.members
-            nums = ",".join(sorted(peer1.members))
-            print(f"{peer1.id} and {peer2.id} have same members {nums}")
+            if peer1.members == peer2.members:
+                nums = ",".join(sorted(peer1.members, key=lambda x: int(x[1:])))
+                print(f"{peer1.id} and {peer2.id} have same members {nums}")
+            else:
+                print(f"Peers member mismatch {peer1.id}.members != {peer2.id}.members")
+                print(peer1)
+                print(peer2)
+                print()
+                ok = False
+
+        assert ok, "peers differ"
 
     def queue_message(self, msg):
         assert isinstance(msg, ChatMessage)
@@ -70,7 +85,7 @@ class Relay:
             msgdict = dict(
                 typ=msg.__class__.__name__,
                 recipients=msg.recipients.copy(),
-                lastchanged=copy.deepcopy(msg.lastchanged),
+                lastchanged=msg.lastchanged.copy(),
                 member=msg.member,
             )
             # provide per-sender buckets to allow modeling offline-ness for peers
@@ -96,7 +111,7 @@ class Peer:
         return int(self.id[1:])
 
     def __repr__(self):
-        members = sorted(self.members)
+        members = sorted(self.members, key=lambda x: int(x[1:]))
         return f"{self.id} members={','.join(members)}"
 
 
@@ -109,7 +124,9 @@ class IncomingMessage:
         abbr = f"{self.typ}({self.member})"
         rec = ",".join(sorted(self.recipients))
         num_lastchanged = len(self.lastchanged)
-        return f"from={self.sender_id} to={rec} num_lastchanged={num_lastchanged} {abbr}"
+        return (
+            f"from={self.sender_id} to={rec} num_lastchanged={num_lastchanged} {abbr}"
+        )
 
 
 def immediate_create_group(peers):
@@ -132,7 +149,7 @@ class ChatMessage:
         assert self.__class__ == ChatMessage or member is not None
         self.member = member
         self.before_send()
-        self.lastchanged = copy.deepcopy(sender.lastchanged)
+        self.lastchanged = sender.lastchanged.copy()
         self.recipients = frozenset(self.sender.members)
         self.sender.relay.queue_message(self)
         self.after_send()
