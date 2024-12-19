@@ -19,14 +19,14 @@ def test_immediate_consistency(n_actors, n_contacts, steps):
 
     relay = Relay(n_actors + n_contacts)
     _peers = list(relay.get_peers())
-    actors = set(_peers[:n_actors])
+    actors = list(_peers[:n_actors])
     contact_ids = set(x.id for x in _peers[n_actors:])
 
     immediate_create_group(actors)
 
     for _t in range(steps):
         # Select random actor.
-        actor = random.choice(list(actors))
+        actor = random.choice(actors)
 
         for receive_from in actors:
             # Maybe receive a message or do nothing
@@ -48,9 +48,9 @@ def test_immediate_consistency(n_actors, n_contacts, steps):
                 DelMemberMessage(actor, member=random.choice(possible_contacts))
 
     relay.receive_messages()
-    relay.assert_group_consistency(peers=list(actors))
+    relay.assert_group_consistency(peers=actors)
     # let one actor send a message to synchronize all contacts
-    ChatMessage(list(actors)[0])
+    ChatMessage(actors[0])
     relay.receive_messages()
 
     relay.assert_group_consistency()
