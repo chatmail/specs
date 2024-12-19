@@ -167,9 +167,11 @@ class DelMemberMessage(ChatMessage):
 def ReceiveChatMessage(peer, msg):
     assert peer.id in msg.recipients
 
-    reset_peer_if_older(peer, msg)
-
-    if peer.clock == msg.clock and peer.members != sender_members(msg):
+    if peer.clock < msg.clock:
+        print(f"{peer.id} is outdated, setting peer.members to msg.recipients")
+        peer.members = set(sender_members(msg))
+        peer.clock = msg.clock
+    elif peer.clock == msg.clock and peer.members != sender_members(msg):
         print(f"{peer.id} has different members than incoming same-clock message")
         print(f"{peer.id} merging message recipients, and increase own clock")
         peer.members.update(sender_members(msg))
@@ -203,10 +205,3 @@ def sender_members(msg):
         return msg.recipients - {msg.payload["member"]}
     else:
         return msg.recipients
-
-
-def reset_peer_if_older(peer, msg):
-    if peer.clock < msg.clock:
-        print(f"{peer.id} is outdated, setting peer.members to msg.recipients")
-        peer.members = set(sender_members(msg))
-        peer.clock = msg.clock
