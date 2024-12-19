@@ -167,7 +167,7 @@ class DelMemberMessage(ChatMessage):
 def ReceiveChatMessage(peer, msg):
     assert peer.id in msg.recipients
 
-    if peer.clock < msg.clock:
+    if msg.clock > peer.clock:
         print(f"{peer.id} is outdated, setting peer.members to msg.recipients")
         peer.members = set(sender_members(msg))
         peer.clock = msg.clock
@@ -181,7 +181,7 @@ def ReceiveChatMessage(peer, msg):
 def ReceiveAddMemberMessage(peer, msg):
     assert peer.id in msg.recipients
 
-    if peer.clock < msg.clock:
+    if msg.clock > peer.clock:
         peer.members = set(sender_members(msg))
         peer.clock = msg.clock
     elif msg.payload["member"] not in peer.members:
@@ -192,7 +192,7 @@ def ReceiveAddMemberMessage(peer, msg):
 def ReceiveDelMemberMessage(peer, msg):
     assert peer.id in msg.recipients
 
-    if peer.clock < msg.clock:
+    if msg.clock > peer.clock:
         peer.members = set(sender_members(msg))
         peer.clock = msg.clock
     elif msg.payload["member"] in peer.members:
