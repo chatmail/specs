@@ -120,11 +120,13 @@ ReceiveMemberAdded(s, r) ==
      IN /\ msg.type = "add"
         /\ \/ msg.clock > clock[r] /\ Members' = [Members EXCEPT ![r] = msg.to]
                                    /\ clock' = [clock EXCEPT ![r] = msg.clock]
-           \/ msg.clock <= clock[r] /\ Members' = [Members EXCEPT ![r] = @ \union {msg.member}]
-                                    /\ clock' = [clock EXCEPT ![r] =
-                                                 IF UNCHANGED Members
-                                                 THEN @
-                                                 ELSE @ + 1]
+           \/ msg.clock = clock[r] /\ Members' = [Members EXCEPT ![r] = @ \union {msg.member}]
+                                   /\ clock' = [clock EXCEPT ![r] =
+                                                IF UNCHANGED Members
+                                                THEN @
+                                                ELSE @ + 1]
+           \/ msg.clock < clock[r] /\ Members' = [Members EXCEPT ![r] = @ \union {msg.member}]
+                                   /\ UNCHANGED clock
 
 ReceiveMemberRemoved(s, r) ==
   /\ Queues[s, r] /= <<>>
@@ -133,11 +135,13 @@ ReceiveMemberRemoved(s, r) ==
      IN /\ msg.type = "remove"
         /\ \/ msg.clock > clock[r] /\ Members' = [Members EXCEPT ![r] = msg.to]
                                    /\ clock' = [clock EXCEPT ![r] = msg.clock]
-           \/ msg.clock <= clock[r] /\ Members' = [Members EXCEPT ![r] = @ \ {msg.member}]
-                                    /\ clock' = [clock EXCEPT ![r] =
-                                                 IF UNCHANGED Members
-                                                 THEN @
-                                                 ELSE @ + 1]
+           \/ msg.clock = clock[r] /\ Members' = [Members EXCEPT ![r] = @ \ {msg.member}]
+                                   /\ clock' = [clock EXCEPT ![r] =
+                                                IF UNCHANGED Members
+                                                THEN @
+                                                ELSE @ + 1]
+           \/ msg.clock < clock[r] /\ Members' = [Members EXCEPT ![r] = @ \ {msg.member}]
+                                   /\ UNCHANGED clock
 
 ReceiveChatMessage(s, r) ==
   /\ Queues[s, r] /= <<>>
@@ -147,7 +151,6 @@ ReceiveChatMessage(s, r) ==
         (* Handle implicit member additions and removals. *)
         /\ \/ msg.clock > clock[r] /\ Members' = [Members EXCEPT ![r] = msg.to]
                                    /\ clock' = [clock EXCEPT ![r] = msg.clock]
-           \/ msg.clock < clock[r] /\ UNCHANGED <<Members, clock>>
               (* Tiebreaker to achieve eventual consistency.
                  Preferring additions over removal by
                  using union instead of intersection. *)
@@ -156,6 +159,7 @@ ReceiveChatMessage(s, r) ==
                                                 IF UNCHANGED Members
                                                 THEN @
                                                 ELSE @ + 1]
+           \/ msg.clock < clock[r] /\ UNCHANGED <<Members, clock>>
 
 ReceivesMessage(s, r) ==
   \/ ReceiveMemberAdded(s, r)
