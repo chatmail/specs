@@ -12,6 +12,7 @@ def lsformat(members):
     l = map(lambda x: x if isinstance(x, str) else x.id, members)
     return ",".join(sorted(l, key=lambda x: int(x[1:])))
 
+
 def lcformat(lastchanged):
     l = []
     for peer_id in sorted(lastchanged):
@@ -152,7 +153,7 @@ class IncomingMessage:
         name = self.typ
         if self.member:
             name += f"({self.member})"
-        return (f"{name} from={self.sender_id} to={rec} lastchanged={lc}")
+        return f"{name} from={self.sender_id} to={rec} lastchanged={lc}"
 
 
 def immediate_create_group(peers):
