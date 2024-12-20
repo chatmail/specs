@@ -94,7 +94,7 @@ class Relay:
         ok = True
         for peer1, peer2 in zip(peers, peers[1:]):
             if peer1.members == peer2.members:
-                nums = lsformat(peer.members)
+                nums = lsformat(peer1.members)
                 print(f"{peer1.id} and {peer2.id} have same members {nums}")
             else:
                 print(f"Peers member mismatch {peer1.id}.members != {peer2.id}.members")
