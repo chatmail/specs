@@ -39,6 +39,10 @@ AllDevices ==
    If the flag is FALSE, it is a tombstone. *)
 MemberList == UNION { [D -> [timestamp: Clock, flag: BOOLEAN]] : D \in SUBSET AllDevices }
 
+(* Extracts members who are not tombstones from the member list. *)
+MemberSet(l) ==
+   {x \in DOMAIN l : l[x].flag }
+
 (* Pairs of devices excluding pairs of devices with self. *)
 DevicePairs == { <<x, y>> \in AllDevices \X AllDevices : x # y }
 
@@ -58,7 +62,7 @@ Init ==
 
 SendMessage(sender, recipients) ==
   queues' = [<<s, r>> \in DevicePairs |->
-             IF s = sender /\ r \in {x \in DOMAIN recipients : recipients[x].flag }
+             IF s = sender /\ r \in MemberSet(recipients)
              THEN Append(queues[s, r], members'[s])
              ELSE queues[s, r]]
 
@@ -125,22 +129,29 @@ Spec == Init /\ [][Next]_vars
 
 ----------------------------------------------------------------------------
 
-GroupConsistency ==
-  \A d1, d2 \in AllDevices :
-  \/ ~IsMember(d1, d1)
-  \/ ~IsMember(d2, d2)
-  \/ IsMember(d1, d2) = IsMember(d2, d1)
+EnabledDevices ==
+  {d \in AllDevices : IsMember(d, d)}
 
 (* If both devices think they are in the chat,
-   they must have the same memberlist.
+   they must have the same memberlist
+   or disjoint memberlist.
 
    We want to have this property eventually
    if devices stop adding and removing members,
    but it does not hold at all times. *)
+GroupConsistency ==
+  \A d1, d2 \in EnabledDevices :
+  \/ members[d1] = members[d2] \* Also checks that clocks are the same.
+  \/ (MemberSet(members[d1]) \intersect MemberSet(members[d2])) = {}
+
+(* If both devices think they are in the chat,
+   they must have the same memberlist.
+
+   This property does not allow the chat
+   to split into "islands" of users
+   who don't know about each other. *)
 StrongGroupConsistency ==
-  \A d1, d2 \in AllDevices :
-  \/ ~IsMember(d1, d1)
-  \/ ~IsMember(d2, d2)
+  \A d1, d2 \in EnabledDevices :
   \/ members[d1] = members[d2]
 
 (* If some device `d1' thinks it is not in the chat,
