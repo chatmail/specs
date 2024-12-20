@@ -155,3 +155,25 @@ def test_removed_member_removes_another_while_offline():
     relay.assert_group_consistency()
     assert p0.members == {"p0", "p1", "p2", "p3", "p4"}
     relay.dump("123")
+
+
+def test_stale_member():
+    relay = Relay(numpeers=3)
+    p1, p2, p3 = relay.get_peers()
+
+    immediate_create_group([p1])
+
+    AddMemberMessage(p1, member=p2.id)
+    relay.receive_messages()
+
+    DelMemberMessage(p1, member=p2.id)
+    DelMemberMessage(p1, member=p1.id)
+
+    AddMemberMessage(p2, member=p3.id)
+
+    # Now p3 has {p1, p2, p3} as members,
+    # but p1 and p2 think they succesfully left the group.
+    relay.receive_messages()
+
+    # This check fails.
+    relay.assert_group_consistency()
