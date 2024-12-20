@@ -159,20 +159,17 @@ def test_removed_member_removes_another_while_offline():
 
 def test_stale_member():
     relay = Relay(numpeers=3)
-    p1, p2, p3 = relay.get_peers()
+    p0, p1, p2 = relay.get_peers()
 
-    immediate_create_group([p1])
+    immediate_create_group([p0, p1])
+    relay.dump("state after group created")
 
+    DelMemberMessage(p0, member=p1.id)
+    DelMemberMessage(p0, member=p0.id)
     AddMemberMessage(p1, member=p2.id)
-    relay.receive_messages()
 
-    DelMemberMessage(p1, member=p2.id)
-    DelMemberMessage(p1, member=p1.id)
-
-    AddMemberMessage(p2, member=p3.id)
-
-    # Now p3 has {p1, p2, p3} as members,
-    # but p1 and p2 think they succesfully left the group.
+    # Now p2 has {p0, p1, p2} as members,
+    # but p0 and p1 think p1 is not part of the group
     relay.receive_messages()
 
     # This check fails.
