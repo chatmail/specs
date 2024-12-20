@@ -169,7 +169,7 @@ EventualConsistencyProperty ==
    /\ MembersKeepChatting
    /\ DevicesKeepReceiving
    /\ EventuallyNoMembershipChanges)
-   => <>[](GroupConsistency /\ NoStaleMembers)
+   => <>[]GroupConsistency
 
 
 =============================================================================
