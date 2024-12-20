@@ -7,8 +7,15 @@ def current_timestamp():
     return datetime.utcnow().timestamp()
 
 
+def lsformat(members):
+    """format a sorted list of peer ids into a ',' separated string"""
+    l = map(lambda x: x if isinstance(x, str) else x.id, members)
+    return ",".join(sorted(l, key=lambda x: int(x[1:])))
+
+
 class Relay:
     def __init__(self, numpeers):
+        self.count_receive_messages_calls = itertools.count()
         self.peers = {}
         for i in range(numpeers):
             newpeer = Peer(relay=self, num=i)
@@ -18,15 +25,13 @@ class Relay:
         return self.peers.values()
 
     def dump(self, title):
+        print(f"{title}")
         for peer_id, peer in self.peers.items():
             pending = sum(len(x) for x in peer.from2mailbox.values())
-            members = ",".join(sorted(peer.members))
-            print(f"{peer_id} members={members}")
-            pprint(f"{peer.lastchanged}")
+            print(peer)
             for sender, pending in peer.from2mailbox.items():
                 for msg in pending:
                     print(f"   {sender.id} {msg}")
-        print()
 
     def receive_messages(self, notreceive=None, notfrom=None):
         """receive messages on all 'peers' (all if not specified)
@@ -34,14 +39,19 @@ class Relay:
         notreceive = set(notreceive) if notreceive else set()
         notfrom = set(notfrom) if notfrom else set()
 
-        print("# BEGIN RECEIVING MESSAGES")
-        print(f"# notreceive={sorted([p.id for p in notreceive])}")
-        print(f"# notfrom={[p.id for p in notfrom]}")
+        count = next(self.count_receive_messages_calls)
+        title = f"# [{count}] BEGIN RECEIVING MESSAGES"
+        if notreceive:
+            title += f" notreceive={lsformat(notreceive)}"
+        if notfrom:
+            title += f" notfrom={lsformat(notfrom)}"
+
+        print(title)
         for peer, from_peer in itertools.product(self.get_peers(), self.get_peers()):
             if from_peer not in notfrom and peer not in notreceive:
                 self._drain_mailbox(peer, from_peer)
-        print("# FINISH RECEIVING MESSAGES")
-        print()
+        self.dump(f"# [{count}] PROCESSED INCOMING MESSAGES, PEERSTATES:")
+        print(f"# [{count}] FINISH RECEIVING MESSAGES")
 
     def _drain_mailbox(self, peer, from_peer, num=-1):
         # drain peer mailbox by reading messages from each sender separately
@@ -53,10 +63,10 @@ class Relay:
             num = num - 1
             msg = queue.pop(0)
             assert peer.id != from_peer.id, "messages sent to self not supported"
-            print(f"receive {peer}")
-            print(f"    msg {msg}")
+            print(f"before {peer}")
+            print(f"   msg {msg}")
             update_peer_from_incoming_message(peer, msg)
-            print(f"    new {peer}")
+            print(f" after {peer}")
 
     def assert_group_consistency(self, peers=None):
         if peers is None:
@@ -71,7 +81,7 @@ class Relay:
         ok = True
         for peer1, peer2 in zip(peers, peers[1:]):
             if peer1.members == peer2.members:
-                nums = ",".join(sorted(peer1.members, key=lambda x: int(x[1:])))
+                nums = lsformat(peer.members)
                 print(f"{peer1.id} and {peer2.id} have same members {nums}")
             else:
                 print(f"Peers member mismatch {peer1.id}.members != {peer2.id}.members")
@@ -121,8 +131,12 @@ class Peer:
         return int(self.id[1:])
 
     def __repr__(self):
-        members = sorted(self.members, key=lambda x: int(x[1:]))
-        return f"{self.id} members={','.join(members)}"
+        l = []
+        for peer_id in sorted(self.lastchanged):
+            l.append(f"{peer_id}->{self.lastchanged[peer_id]}")
+
+        lc = ", ".join(l)
+        return f"{self.id} members={lsformat(self.members)} lastchanged={{{lc}}}"
 
 
 class IncomingMessage:
@@ -131,11 +145,13 @@ class IncomingMessage:
         self.__dict__.update(msgdict)
 
     def __repr__(self):
-        abbr = f"{self.typ}({self.member})"
         rec = ",".join(sorted(self.recipients))
         num_lastchanged = len(self.lastchanged)
+        name = self.typ
+        if self.member:
+            name += f"({self.member})"
         return (
-            f"from={self.sender_id} to={rec} num_lastchanged={num_lastchanged} {abbr}"
+            f"{name} from={self.sender_id} to={rec} num_lastchanged={num_lastchanged}"
         )
 
 
@@ -160,14 +176,16 @@ class ChatMessage:
         self.member = member
         self.before_send()
         self.lastchanged = sender.lastchanged.copy()
-        self.recipients = frozenset(self.sender.members)
+        self.recipients = self.sender.members.copy()
         self.sender.relay.queue_message(self)
         self.after_send()
 
     def __repr__(self):
-        members = ",".join(self.sender.members)
-        name = self.__class__.__name__
-        return f"<{name} {self.sender.id}->{members} {self.member}>"
+        members = lsformat(self.sender.members)
+        name = "Incoming" + self.__class__.__name__
+        if self.member:
+            name += f"({self.member})"
+        return f"<{name} from={self.sender.id} to={members}>"
 
     def before_send(self):
         pass
