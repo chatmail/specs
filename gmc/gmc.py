@@ -12,6 +12,12 @@ def lsformat(members):
     l = map(lambda x: x if isinstance(x, str) else x.id, members)
     return ",".join(sorted(l, key=lambda x: int(x[1:])))
 
+def lcformat(lastchanged):
+    l = []
+    for peer_id in sorted(lastchanged):
+        l.append(f"{peer_id}->{lastchanged[peer_id]}")
+    return ", ".join(l)
+
 
 class Relay:
     def __init__(self, numpeers):
@@ -131,11 +137,7 @@ class Peer:
         return int(self.id[1:])
 
     def __repr__(self):
-        l = []
-        for peer_id in sorted(self.lastchanged):
-            l.append(f"{peer_id}->{self.lastchanged[peer_id]}")
-
-        lc = ", ".join(l)
+        lc = lcformat(self.lastchanged)
         return f"{self.id} members={lsformat(self.members)} lastchanged={{{lc}}}"
 
 
@@ -146,13 +148,11 @@ class IncomingMessage:
 
     def __repr__(self):
         rec = ",".join(sorted(self.recipients))
-        num_lastchanged = len(self.lastchanged)
+        lc = lcformat(self.lastchanged)
         name = self.typ
         if self.member:
             name += f"({self.member})"
-        return (
-            f"{name} from={self.sender_id} to={rec} num_lastchanged={num_lastchanged}"
-        )
+        return (f"{name} from={self.sender_id} to={rec} lastchanged={lc}")
 
 
 def immediate_create_group(peers):
