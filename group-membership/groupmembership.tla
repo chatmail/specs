@@ -5,7 +5,8 @@
 (***************************************************************************)
 
 EXTENDS Naturals,
-        Sequences
+        Sequences,
+        TLC
 
 CONSTANT Devices, \* Set of devices such as `{d1, d2, d3}'.
          Creator, \* Device that created the chat.
@@ -15,154 +16,100 @@ CONSTANT Devices, \* Set of devices such as `{d1, d2, d3}'.
 Clock == 0 .. MaxClock
 
 VARIABLES \* Map from device to the set of devices it thinks are members of the group .
-          Members,
+          members,
           \* FIFO queues of messages sent between devices.
-          Queues,
-          \* clock[d] is the clock of device `d`.
+          queues,
+          \* Global clock.
           clock
 
-vars == <<Members, Queues, clock>>
+vars == <<members, queues, clock>>
 
 -----------------------------------------------------------------
+
+(*********)
+(* Types *)
+(*********)
 
 AllDevices ==
   Devices \union {Creator}
 
-(*************)
-(* Messages. *)
-(*************)
-
-(* Each message has the clock and the "To" field.
-   "To" field contains the member list at the time of sending,
-   so for the "Member removed" it does not include the removed member. *)
-MemberAddedMessage(t, m, c) == [type |-> "add", to |-> t, member |-> m, clock |-> c]
-MemberRemovedMessage(t, m, c) == [type |-> "remove", to |-> t, member |-> m, clock |-> c]
-ChatMessage(t, c) == [type |-> "chat", to |-> t, clock |-> c]
-
-(* The set of all possible messages.
-
-   Messages do not have explicit `From:` field
-   because messages for each sender are placed into its own queue. *)
-Messages ==
-  {MemberAddedMessage(t, m, c) :
-   <<t, m, c>> \in (SUBSET AllDevices) \X AllDevices \X Clock} \union
-  {MemberRemovedMessage(t, m, c) :
-   <<t, m, c>> \in (SUBSET AllDevices) \X AllDevices \X Clock} \union
-  {ChatMessage(t, c) : <<t, c>> \in (SUBSET AllDevices) \X Clock}
+(* Member list is a function from a subset of devices
+   to pairs of clock and a flag.
+   If the flag is TRUE, the member is part of the group.
+   If the flag is FALSE, it is a tombstone. *)
+MemberList == UNION { [D -> [timestamp: Clock, flag: BOOLEAN]] : D \in SUBSET AllDevices }
 
 (* Pairs of devices excluding pairs of devices with self. *)
 DevicePairs == { <<x, y>> \in AllDevices \X AllDevices : x # y }
 
 TypeOK ==
-  /\ Members \in [AllDevices -> SUBSET AllDevices]
-  /\ Queues \in [DevicePairs -> Seq(Messages)]
-  /\ clock \in [AllDevices -> Clock]
+  /\ members \in [AllDevices -> MemberList]
+  /\ queues \in [DevicePairs -> Seq(MemberList)]
+  /\ clock \in Clock
 
 Init ==
   \* Only chat creator is a member of the chat.
-  /\ Members = [d \in AllDevices |-> IF d = Creator THEN {d} ELSE {}]
-  /\ Queues = [pair \in DevicePairs |-> <<>>] \* All queues are empty.
-  /\ clock = [d \in AllDevices |-> 0]
+  /\ members = [d \in AllDevices |->
+                IF d = Creator THEN d :> [timestamp |-> 0, flag |-> TRUE] ELSE <<>>]
+  /\ queues = [pair \in DevicePairs |-> <<>>] \* All queues are empty.
+  /\ clock = 0
 
 ----------------------------------------------------------------------------
 
-SendMessage(sender, recipients, msg) ==
-  Queues' = [<<s, r>> \in DevicePairs |->
-             IF s = sender /\ r \in recipients
-             THEN Append(Queues[s, r], msg)
-             ELSE Queues[s, r]]
+SendMessage(sender, recipients) ==
+  queues' = [<<s, r>> \in DevicePairs |->
+             IF s = sender /\ r \in {x \in DOMAIN recipients : recipients[x].flag }
+             THEN Append(queues[s, r], members'[s])
+             ELSE queues[s, r]]
+
+(* True if device d thinks m is a chat member. *)
+IsMember(d, m) ==
+  /\ m \in DOMAIN members[d]
+  /\ members[d][m].flag
 
 (* Device `d' sends a chat message. *)
 SendsChatMessage(d) ==
-  /\ d \in Members[d]
-  /\ UNCHANGED <<Members, clock>>
-  /\ LET
-       msg == ChatMessage(Members[d], clock[d])
-     IN
-       SendMessage(d, Members[d], msg)
+  /\ IsMember(d, d)
+  /\ UNCHANGED <<members, clock>>
+  /\ LET msg == members'[d]
+     IN SendMessage(d, members[d])
 
 (* Device `d' adds a member to the chat. *)
 AddsMember(d) ==
-  /\ d \in Members[d]
+  /\ IsMember(d, d)
   /\ \E m \in AllDevices :
-     /\ m \notin Members[d]
-     /\ Members' = [Members EXCEPT ![d] = Members[d] \union {m}]
-     /\ clock' = [clock EXCEPT ![d] = @ + 1]
+     /\ ~IsMember(d, m)
+     /\ clock' = clock + 1
+     /\ members' = [members EXCEPT ![d] = (m :> [timestamp |-> clock', flag |-> TRUE]) @@ members[d]]
      (* Send "Member added" message to all chat members, including the new one. *)
-     /\ LET
-          to == Members'[d]
-          msg == MemberAddedMessage(to, m, clock'[d])
-        IN
-          SendMessage(d, Members'[d], msg)
+     /\ LET msg == members'[d]
+        IN SendMessage(d, members'[d])
 
 RemovesMember(d) ==
-  /\ d \in Members[d]
-  /\ \E m \in Members[d] : \* It is possible that m = d, then d leaves the group.
-     /\ Members' = [Members EXCEPT ![d] = Members[d] \ {m}]
-     /\ clock' = [clock EXCEPT ![d] = @ + 1]
-     /\ LET
-          to == Members'[d] (* Removed member is not included in the To field
-                               but will receive the message. *)
-          msg == MemberRemovedMessage(to, m, clock'[d])
-        IN
-          SendMessage(d, Members[d], msg)
+  /\ IsMember(d, d)
+  /\ \E m \in AllDevices :
+     /\ IsMember(d, m) \* It is possible that m = d, then d leaves the group.
+     /\ clock' = clock + 1
+     /\ members' = [members EXCEPT ![d] = (m :> [timestamp |-> clock', flag |-> FALSE]) @@ members[d]]
+     /\ LET msg == members'[d]
+        IN SendMessage(d, members[d])
 
 ----------------------------------------------------------------------------
 
 (* Message reception logic, the main part of the protocol. *)
 
-ReceiveMemberAdded(s, r) ==
-  /\ Queues[s, r] /= <<>>
-  /\ Queues' = [Queues EXCEPT ![s, r] = Tail(@)]
-  /\ LET msg == Head(Queues[s, r])
-     IN /\ msg.type = "add"
-        /\ \/ msg.clock > clock[r] /\ Members' = [Members EXCEPT ![r] = msg.to]
-                                   /\ clock' = [clock EXCEPT ![r] = msg.clock]
-           \/ msg.clock = clock[r] /\ Members' = [Members EXCEPT ![r] = @ \union {msg.member}]
-                                   /\ clock' = [clock EXCEPT ![r] =
-                                                IF UNCHANGED Members
-                                                THEN @
-                                                ELSE @ + 1]
-           \/ msg.clock < clock[r] /\ Members' = [Members EXCEPT ![r] = @ \union {msg.member}]
-                                   /\ UNCHANGED clock
-
-ReceiveMemberRemoved(s, r) ==
-  /\ Queues[s, r] /= <<>>
-  /\ Queues' = [Queues EXCEPT ![s, r] = Tail(@)]
-  /\ LET msg == Head(Queues[s, r])
-     IN /\ msg.type = "remove"
-        /\ \/ msg.clock > clock[r] /\ Members' = [Members EXCEPT ![r] = msg.to]
-                                   /\ clock' = [clock EXCEPT ![r] = msg.clock]
-           \/ msg.clock = clock[r] /\ Members' = [Members EXCEPT ![r] = @ \ {msg.member}]
-                                   /\ clock' = [clock EXCEPT ![r] =
-                                                IF UNCHANGED Members
-                                                THEN @
-                                                ELSE @ + 1]
-           \/ msg.clock < clock[r] /\ Members' = [Members EXCEPT ![r] = @ \ {msg.member}]
-                                   /\ UNCHANGED clock
-
-ReceiveChatMessage(s, r) ==
-  /\ Queues[s, r] /= <<>>
-  /\ Queues' = [Queues EXCEPT ![<<s, r>>] = Tail(@)]
-  /\ LET msg == Head(Queues[s, r])
-     IN /\ msg.type = "chat"
-        (* Handle implicit member additions and removals. *)
-        /\ \/ msg.clock > clock[r] /\ Members' = [Members EXCEPT ![r] = msg.to]
-                                   /\ clock' = [clock EXCEPT ![r] = msg.clock]
-              (* Tiebreaker to achieve eventual consistency.
-                 Preferring additions over removal by
-                 using union instead of intersection. *)
-           \/ msg.clock = clock[r] /\ Members' = [Members EXCEPT ![r] = @ \union msg.to]
-                                   /\ clock' = [clock EXCEPT ![r] =
-                                                IF UNCHANGED Members
-                                                THEN @
-                                                ELSE @ + 1]
-           \/ msg.clock < clock[r] /\ UNCHANGED <<Members, clock>>
-
 ReceivesMessage(s, r) ==
-  \/ ReceiveMemberAdded(s, r)
-  \/ ReceiveMemberRemoved(s, r)
-  \/ ReceiveChatMessage(s, r)
+  /\ queues[s, r] /= <<>>
+  /\ queues' = [queues EXCEPT ![s, r] = Tail(@)]
+  /\ UNCHANGED clock
+  /\ LET msg == Head(queues[s, r])
+     IN /\ members' = [members EXCEPT ![r] =
+                       [x \in (DOMAIN @ \cup DOMAIN msg) |->
+                        IF x \notin DOMAIN @
+                        THEN msg[x]
+                        ELSE IF x \in DOMAIN msg /\ msg[x].timestamp > @[x].timestamp
+                        THEN msg[x]
+                        ELSE @[x]]]
 
 Actions(d) ==
   \/ SendsChatMessage(d)
@@ -186,16 +133,16 @@ Spec == Init /\ [][Next]_vars
    but it does not hold at all times. *)
 GroupConsistency ==
   \A d1, d2 \in AllDevices :
-  \/ d1 \notin Members[d1]
-  \/ d2 \notin Members[d2]
-  \/ Members[d1] = Members[d2]
+  \/ ~IsMember(d1, d1)
+  \/ ~IsMember(d2, d2)
+  \/ members[d1] = members[d2]
 
 (* If some device `d1' thinks it is not in the chat,
    then any other device `d2` which thinks it is in the chat
    must think that `d1' not in the chat. *)
 NoStaleMembers ==
   \A d1, d2 \in AllDevices :
-  (d1 \notin Members[d1] /\ d2 \in Members[d2]) => (d1 \notin Members[d2])
+  (~IsMember(d1, d1) /\ IsMember(d2, d2) => ~IsMember(d2, d1))
 
 (* All devices which can chat keep chatting. *)
 MembersKeepChatting ==

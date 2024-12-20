@@ -1,7 +1,7 @@
 ---- MODULE MC ----
 EXTENDS groupmembership, TLC
 
-StateConstraint == \A <<x, y>> \in DevicePairs : Len(Queues[x, y]) <= MaxQueue
+StateConstraint == \A <<x, y>> \in DevicePairs : Len(queues[x, y]) <= MaxQueue
 
-ClockConstraint == \A d \in AllDevices : clock[d] < MaxClock
+ClockConstraint == clock < MaxClock
 =============================================================================
