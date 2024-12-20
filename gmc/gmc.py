@@ -63,7 +63,7 @@ class Relay:
             print("# notify peers who send us a message even though we left the group")
             while self.notify_stale:
                 peer, stale_member = self.notify_stale.pop()
-                UpdateMessage(peer, recipients=[stale_member])
+                RetryLeave(peer, recipients=[stale_member])
         print(f"# [{count}] FINISH RECEIVING MESSAGES")
 
     def _drain_mailbox(self, peer, from_peer, num=-1):
@@ -182,7 +182,7 @@ def immediate_create_group(peers):
 class ChatMessage:
     def __init__(self, sender, member=None, recipients=None):
         self.sender = sender
-        assert self.__class__ in (ChatMessage, UpdateMessage) or member is not None
+        assert self.__class__ in (ChatMessage, RetryLeave) or member is not None
         self.member = member
         self.before_send()
         self.lastchanged = sender.lastchanged.copy()
@@ -218,17 +218,15 @@ class DelMemberMessage(ChatMessage):
         self.sender.members.remove(self.member)
 
 
-class UpdateMessage(ChatMessage):
-    """Updating timestamps for a stale peer. """
+class RetryLeave(ChatMessage):
+    """Updating timestamps for a peer who sends us message but we are not part of the group. """
 
 
-# Receiving Chat/Add/Del/Update messages
+# Receiving Chat/Add/Del/RetryLeave messages
 # each of which can cause group membership updates
 
 
 def update_peer_from_incoming_message(peer, msg):
-    assert peer.id in msg.recipients
-
     stale_timestamps = False
     for historic_peer, msg_lastchanged in msg.lastchanged.items():
         current_lastchanged = peer.lastchanged.get(historic_peer, 0)
