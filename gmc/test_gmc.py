@@ -188,3 +188,38 @@ def test_stale_member():
     relay.receive_messages()
 
     relay.assert_group_consistency()
+
+
+def test_concurrent_removals():
+    relay = Relay(numpeers=4)
+    p0, p1, p2, p3 = relay.get_peers()
+
+    immediate_create_group([p0, p1])
+    relay.dump("state after group created")
+
+    DelMemberMessage(p0, member=p1.id)
+    AddMemberMessage(p0, member=p2.id)
+
+    DelMemberMessage(p1, member=p0.id)
+    AddMemberMessage(p1, member=p3.id)
+
+    relay.receive_messages()
+
+    ChatMessage(p2)
+    ChatMessage(p3)
+    relay.receive_messages()
+
+    # p0 and p1 will have queued update messages to be sent to p2 and p3
+    assert not p0.from2mailbox
+    assert not p1.from2mailbox
+    assert len(p2.from2mailbox[p0]) == 1
+    assert len(p3.from2mailbox[p1]) == 1
+    relay.receive_messages()
+
+    # below assert will fail with following peer states:
+    # p0 members=p2 lastchanged={p0->104, p1->102, p2->103}
+    # p1 members=p3 lastchanged={p0->104, p1->102, p3->105}
+    # p2 members=p2 lastchanged={p0->104, p1->102, p2->103}
+    # p3 members=p3 lastchanged={p0->104, p1->102, p3->105}
+
+    relay.assert_group_consistency()
