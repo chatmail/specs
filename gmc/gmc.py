@@ -63,7 +63,7 @@ class Relay:
             peers = list(x for x in self.peers.values() if x.id in x.members)
 
         # checking that actors do not contain peers who themselves think they are not members
-        left_peers = list(x for x in self.peers.values() if x.id not in x.members)
+        left_peers = list(x.id for x in self.peers.values() if x.id not in x.members)
         for peer in peers:
             assert not peer.members.intersection(left_peers)
 
