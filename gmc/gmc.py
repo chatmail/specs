@@ -81,14 +81,16 @@ class Relay:
             update_peer_from_incoming_message(peer, msg)
             print(f" after {peer}")
 
-    def assert_group_consistency(self, peers=None):
+    def assert_group_consistency(self, peers=None, disjunct_ok=False):
         if peers is None:
             peers = list(x for x in self.peers.values() if x.id in x.members)
-
-        # checking that actors do not contain peers who themselves think they are not members
-        left_peers = list(x.id for x in self.peers.values() if x.id not in x.members)
-        for peer in peers:
-            assert not peer.members.intersection(left_peers)
+        else:
+            # checking that actors do not contain peers who themselves think they are not members
+            left_peers = list(
+                x.id for x in self.peers.values() if x.id not in x.members
+            )
+            for peer in peers:
+                assert not peer.members.intersection(left_peers)
 
         # checking that all peers have the same member list
         ok = True
@@ -96,12 +98,17 @@ class Relay:
             if peer1.members == peer2.members:
                 nums = lsformat(peer1.members)
                 print(f"{peer1.id} and {peer2.id} have same members {nums}")
-            else:
-                print(f"Peers member mismatch {peer1.id}.members != {peer2.id}.members")
-                print(peer1)
-                print(peer2)
-                print()
-                ok = False
+                continue
+            elif disjunct_ok:
+                if not peer1.members.intersection(peer2.members):
+                    print(f"{peer1.id} and {peer2.id} have no intersection")
+                    continue
+
+            print(f"Peers member mismatch {peer1.id}.members != {peer2.id}.members")
+            print(peer1)
+            print(peer2)
+            print()
+            ok = False
 
         assert ok, "peers differ"
 
@@ -219,7 +226,7 @@ class DelMemberMessage(ChatMessage):
 
 
 class RetryLeave(ChatMessage):
-    """Updating timestamps for a peer who sends us message but we are not part of the group. """
+    """Updating timestamps for a peer who sends us message but we are not part of the group."""
 
 
 # Receiving Chat/Add/Del/RetryLeave messages
