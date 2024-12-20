@@ -171,8 +171,20 @@ def test_stale_member():
     # Now p2 has {p0, p1, p2} as members,
     # but p0 and p1 think p1 is not part of the group
     relay.receive_messages()
-    assert p2.from2mailbox
+
+    assert p0.members == {"p2"}
+    assert p1.members == {"p0", "p2"}
+    assert p2.members == {"p0", "p1", "p2"}
+    # 1. if p2 never sends a message there is no problem
+    # 2. if p2 sends a message then the recipients p0 and p1 will
+    #    realize that p2 thinks they are a member and each queue an UpdateMessage
+    ChatMessage(p2)
+    relay.receive_messages()
+    # p0 and p1 will have queued update messages to be sent to p2
+    assert not p0.from2mailbox
+    assert not p1.from2mailbox
+    assert len(p2.from2mailbox[p0]) == 1
+    assert len(p2.from2mailbox[p1]) == 1
     relay.receive_messages()
 
-    # This check fails.
     relay.assert_group_consistency()
