@@ -253,5 +253,5 @@ def update_peer_from_incoming_message(peer, msg):
                 # and we have a newer timestamp for ourselves
                 stale_timestamps = True
 
-    if stale_timestamps and msg.sender_id in peer.members:
+    if stale_timestamps:
         peer.relay.notify_stale.append((peer, msg.sender_id))
