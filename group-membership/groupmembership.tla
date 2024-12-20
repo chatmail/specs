@@ -125,13 +125,19 @@ Spec == Init /\ [][Next]_vars
 
 ----------------------------------------------------------------------------
 
+GroupConsistency ==
+  \A d1, d2 \in AllDevices :
+  \/ ~IsMember(d1, d1)
+  \/ ~IsMember(d2, d2)
+  \/ IsMember(d1, d2) = IsMember(d2, d1)
+
 (* If both devices think they are in the chat,
    they must have the same memberlist.
 
    We want to have this property eventually
    if devices stop adding and removing members,
    but it does not hold at all times. *)
-GroupConsistency ==
+StrongGroupConsistency ==
   \A d1, d2 \in AllDevices :
   \/ ~IsMember(d1, d1)
   \/ ~IsMember(d2, d2)
