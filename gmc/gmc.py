@@ -24,7 +24,7 @@ class Relay:
     def __init__(self, numpeers):
         self.count_receive_messages_calls = itertools.count()
         self.peers = {}
-        self.notify_stale = []
+        self.notify_retry_leave = []
         for i in range(numpeers):
             newpeer = Peer(relay=self, num=i)
             self.peers[newpeer.id] = newpeer
@@ -59,10 +59,10 @@ class Relay:
             if from_peer not in notfrom and peer not in notreceive:
                 self._drain_mailbox(peer, from_peer)
         self.dump(f"# [{count}] PROCESSED INCOMING MESSAGES, PEERSTATES:")
-        if self.notify_stale:
+        if self.notify_retry_leave:
             print("# notify peers who send us a message even though we left the group")
-            while self.notify_stale:
-                peer, stale_member = self.notify_stale.pop()
+            while self.notify_retry_leave:
+                peer, stale_member = self.notify_retry_leave.pop()
                 RetryLeave(peer, recipients=[stale_member])
         print(f"# [{count}] FINISH RECEIVING MESSAGES")
 
@@ -252,4 +252,4 @@ def update_peer_from_incoming_message(peer, msg):
                 stale_timestamps = True
 
     if stale_timestamps:
-        peer.relay.notify_stale.append((peer, msg.sender_id))
+        peer.relay.notify_retry_leave.append((peer, msg.sender_id))
