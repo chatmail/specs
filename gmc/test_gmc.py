@@ -171,6 +171,8 @@ def test_stale_member():
     # Now p2 has {p0, p1, p2} as members,
     # but p0 and p1 think p1 is not part of the group
     relay.receive_messages()
+    assert p2.from2mailbox
+    relay.receive_messages()
 
     # This check fails.
     relay.assert_group_consistency()

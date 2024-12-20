@@ -24,6 +24,7 @@ class Relay:
     def __init__(self, numpeers):
         self.count_receive_messages_calls = itertools.count()
         self.peers = {}
+        self.notify_stale_added_members = []
         for i in range(numpeers):
             newpeer = Peer(relay=self, num=i)
             self.peers[newpeer.id] = newpeer
@@ -58,6 +59,11 @@ class Relay:
             if from_peer not in notfrom and peer not in notreceive:
                 self._drain_mailbox(peer, from_peer)
         self.dump(f"# [{count}] PROCESSED INCOMING MESSAGES, PEERSTATES:")
+        if self.notify_stale_added_members:
+            print("# notify recently added stale members")
+            while self.notify_stale_added_members:
+                peer, stale_member = self.notify_stale_added_members.pop()
+                UpdateMessage(peer, recipients=[stale_member])
         print(f"# [{count}] FINISH RECEIVING MESSAGES")
 
     def _drain_mailbox(self, peer, from_peer, num=-1):
@@ -99,10 +105,13 @@ class Relay:
 
         assert ok, "peers differ"
 
-    def queue_message(self, msg):
+    def queue_message(self, msg, recipients=None):
         assert isinstance(msg, ChatMessage)
         print(f"queueing {msg}")
-        for peer_id in msg.recipients:
+        if recipients is None:
+            recipients = msg.recipients
+
+        for peer_id in recipients:
             if peer_id == msg.sender.id:
                 continue  # we don't send message to ourselves
 
@@ -171,14 +180,14 @@ def immediate_create_group(peers):
 
 
 class ChatMessage:
-    def __init__(self, sender, member=None):
+    def __init__(self, sender, member=None, recipients=None):
         self.sender = sender
-        assert self.__class__ == ChatMessage or member is not None
+        assert self.__class__ in (ChatMessage, UpdateMessage) or member is not None
         self.member = member
         self.before_send()
         self.lastchanged = sender.lastchanged.copy()
-        self.recipients = self.sender.members.copy()
-        self.sender.relay.queue_message(self)
+        self.recipients = sender.members.copy()
+        self.sender.relay.queue_message(self, recipients=recipients)
         self.after_send()
 
     def __repr__(self):
@@ -209,26 +218,38 @@ class DelMemberMessage(ChatMessage):
         self.sender.members.remove(self.member)
 
 
+class UpdateMessage(ChatMessage):
+    pass
+
+
 # Receiving Chat/Add/Del messages
 # each of which can cause group membership updates
 
 
 def update_peer_from_incoming_message(peer, msg):
-    assert peer.id in msg.recipients
+    # assert peer.id in msg.recipients
 
-    for historic_peer, lastchanged in msg.lastchanged.items():
-        if peer.lastchanged.get(historic_peer, 0) < lastchanged:
+    stale_timestamps = False
+    added_member = None
+    for historic_peer, msg_lastchanged in msg.lastchanged.items():
+        current_lastchanged = peer.lastchanged.get(historic_peer, 0)
+        if current_lastchanged < msg_lastchanged:
             # the message contains newer information about this member
-            peer.lastchanged[historic_peer] = lastchanged
+            peer.lastchanged[historic_peer] = msg_lastchanged
 
             if historic_peer == msg.member:
                 if msg.typ == "DelMemberMessage":
                     peer.members.discard(historic_peer)
                 elif msg.typ == "AddMemberMessage":
                     peer.members.add(historic_peer)
+                    added_member = historic_peer
             elif historic_peer not in msg.recipients and historic_peer in peer.members:
                 print(f"implicititely removing {historic_peer}")
                 peer.members.remove(historic_peer)
             elif historic_peer in msg.recipients and historic_peer not in peer.members:
                 print(f"implicititely adding {historic_peer}")
                 peer.members.add(historic_peer)
+        elif current_lastchanged > msg_lastchanged:
+            stale_timestamps = True
+    if stale_timestamps and added_member:
+        peer.relay.notify_stale_added_members.append((peer, added_member))
