@@ -238,6 +238,8 @@ def test_multi_device_concurrent_add():
 
     # both p2 and p3 have not received the other's AddMember
     # so we need one more chat message to update
+    # (Alternantively, we could make p0 detect concurrency
+    # and make them repeat the AddMemberMessage)
     ChatMessage(p0)
     relay.receive_messages()
 
