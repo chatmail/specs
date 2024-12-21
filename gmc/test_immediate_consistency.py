@@ -48,7 +48,7 @@ def test_immediate_consistency(n_actors, n_contacts, steps):
                 DelMemberMessage(actor, member=random.choice(possible_contacts))
 
     relay.receive_messages()
-    relay.assert_group_consistency(peers=actors)
+    relay.assert_group_consistency(peers=actors, ignore_mailboxes=True)
     # let one actor send a message to synchronize all contacts
     ChatMessage(actors[0])
     relay.receive_messages()

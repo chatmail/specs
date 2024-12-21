@@ -85,7 +85,9 @@ class Relay:
             update_peer_from_incoming_message(peer, msg)
             print(f" after {peer}")
 
-    def assert_group_consistency(self, peers=None, disjunct_ok=False):
+    def assert_group_consistency(
+        self, peers=None, disjunct_ok=False, ignore_mailboxes=False
+    ):
         if peers is None:
             peers = list(x for x in self.get_peers() if x.is_member())
         else:
@@ -95,6 +97,11 @@ class Relay:
             )
             for peer in peers:
                 assert not peer.members.intersection(left_peers)
+
+        # ensure no messages are left
+        if not ignore_mailboxes:
+            for peer in peers:
+                assert not peer.from2mailbox, f"mailbox not empty for {peer}"
 
         # checking that all peers have the same member list
         ok = True
@@ -283,4 +290,5 @@ def update_peer_from_incoming_message(peer, msg):
                 stale_timestamps = True
 
     if stale_timestamps:
+        print(f"queueing RetryLeave {peer} to {msg.sender_id}")
         peer.relay.notify_retry_leave.append((peer, msg.sender_id))

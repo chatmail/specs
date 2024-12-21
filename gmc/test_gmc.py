@@ -95,7 +95,7 @@ def test_add_remove_and_stale_member_sends_chatmessage():
     ChatMessage(p3)
     relay.receive_messages()
 
-    relay.assert_group_consistency()
+    relay.assert_group_consistency(ignore_mailboxes=True)
 
     ChatMessage(p0)
     relay.receive_messages()
@@ -255,5 +255,8 @@ def test_multi_device_concurrent_delete():
     p0_2 = p0.add_device()
     DelMemberMessage(p0, member=p2.id)
     DelMemberMessage(p0_2, member=p3.id)
+    relay.receive_messages()
+    # one of p2/p3 will have filed a RetryLeave message
+    relay.assert_group_consistency(ignore_mailboxes=True)
     relay.receive_messages()
     relay.assert_group_consistency()
