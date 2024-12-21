@@ -26,7 +26,7 @@ class Relay:
         self.peers = {}
         self.notify_retry_leave = []
         for i in range(numpeers):
-            newpeer = Peer(relay=self, num=i)
+            newpeer = Peer(relay=self, id=f"p{i}")
             self.peers[newpeer.id] = newpeer
 
     def get_peers(self):
@@ -139,9 +139,10 @@ class Relay:
 
 
 class Peer:
-    def __init__(self, relay, num):
+    def __init__(self, relay, id):
+        assert id.startswith("p"), id
         self.relay = relay
-        self.id = f"p{num}"
+        self.id = id
         self.members = set()
         self.from2mailbox = {}
         # dict which maps past/present members to timestamp
