@@ -24,18 +24,22 @@ class Relay:
     def __init__(self, numpeers):
         self.count_receive_messages_calls = itertools.count()
         self.peers = {}
+        self.peer2devices = {}
         self.notify_retry_leave = []
         for i in range(numpeers):
             newpeer = Peer(relay=self, id=f"p{i}")
             self.peers[newpeer.id] = newpeer
 
-    def get_peers(self):
-        return self.peers.values()
+    def get_peers(self, recipients=None):
+        for recipient in recipients if recipients else list(self.peers):
+            assert ":" not in recipient
+            yield self.peers[recipient]
+            for md_peer in self.peer2devices.get(recipient, []):
+                yield md_peer
 
     def dump(self, title):
         print(f"{title}")
-        for peer_id, peer in self.peers.items():
-            pending = sum(len(x) for x in peer.from2mailbox.values())
+        for peer in self.get_peers():
             print(peer)
             for sender, pending in peer.from2mailbox.items():
                 for msg in pending:
@@ -83,7 +87,7 @@ class Relay:
 
     def assert_group_consistency(self, peers=None, disjunct_ok=False):
         if peers is None:
-            peers = list(x for x in self.peers.values() if x.id in x.members)
+            peers = list(x for x in self.get_peers() if x.is_member())
         else:
             # checking that actors do not contain peers who themselves think they are not members
             left_peers = list(
@@ -118,13 +122,13 @@ class Relay:
         if recipients is None:
             recipients = msg.recipients
 
-        for peer_id in recipients:
-            if peer_id == msg.sender.id:
-                continue  # we don't send message to ourselves
+        for peer in self.get_peers(recipients):
+            if peer.id == msg.sender.id:
+                continue  # we don't send/queue message to ourselves
 
             # create a distinct message object for each receiving peer
             incoming_msg = IncomingMessage(
-                sender_id=msg.sender.id,
+                sender_id=msg.sender.base_id,
                 msgdict=dict(
                     typ=msg.__class__.__name__,
                     recipients=msg.recipients.copy(),
@@ -133,7 +137,6 @@ class Relay:
                 ),
             )
             # provide per-sender buckets to allow modeling offline-ness for peers
-            peer = self.peers[peer_id]
             peer_mailbox = peer.from2mailbox.setdefault(msg.sender, [])
             peer_mailbox.append(incoming_msg)
 
@@ -143,20 +146,40 @@ class Peer:
         assert id.startswith("p"), id
         self.relay = relay
         self.id = id
+        self.base_id = id.split(":")[0]
         self.members = set()
         self.from2mailbox = {}
         # dict which maps past/present members to timestamp
         self.lastchanged = {}
 
+    def _clone(self, new_pid):
+        new_peer = Peer(self.relay, new_pid)
+        new_peer.members.update(self.members)
+        # second device starts with empty mailbox
+        new_peer.lastchanged = self.lastchanged.copy()
+        return new_peer
+
     def __eq__(self, other):
         return self.id == other.id
 
     def __hash__(self):
-        return int(self.id[1:])
+        return hash(self.id)
+
+    def is_member(self):
+        """Return True if this device is a member of the group"""
+        base_pid = self.id.split(":")[0]
+        return base_pid in self.members
+
+    def add_device(self):
+        base_pid = self.id.split(":")[0]
+        device_list = self.relay.peer2devices.setdefault(base_pid, [])
+        new_peer = self._clone(new_pid=f"{base_pid}:{len(device_list)+2}")
+        device_list.append(new_peer)
+        return new_peer
 
     def __repr__(self):
         lc = lcformat(self.lastchanged)
-        return f"{self.id} members={lsformat(self.members)} lastchanged={{{lc}}}"
+        return f"{self.id} members=[{lsformat(self.members)}] lastchanged={{{lc}}}"
 
 
 class IncomingMessage:

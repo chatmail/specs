@@ -219,3 +219,41 @@ def test_concurrent_removals():
     relay.receive_messages()
 
     relay.assert_group_consistency(disjunct_ok=True)
+
+
+def test_multi_device_concurrent_add():
+    relay = Relay(numpeers=3)
+    p0, p1, p2 = relay.get_peers()
+
+    immediate_create_group([p0])
+
+    # concurrent multi-device addition of two group members
+    p0_2 = p0.add_device()
+    assert p0.members == p0_2.members
+    assert p0.members is not p0_2.members
+
+    AddMemberMessage(p0, member=p1.id)
+    AddMemberMessage(p0_2, member=p2.id)
+    relay.receive_messages()
+
+    # both p2 and p3 have not received the other's AddMember
+    # so we need one more chat message to update
+    ChatMessage(p0)
+    relay.receive_messages()
+
+    assert p0.members == p1.members
+    assert p1.members == p2.members
+    relay.assert_group_consistency()
+
+
+def test_multi_device_concurrent_delete():
+    relay = Relay(numpeers=4)
+    p0, p1, p2, p3 = relay.get_peers()
+
+    immediate_create_group([p0, p1, p2, p3])
+
+    p0_2 = p0.add_device()
+    DelMemberMessage(p0, member=p2.id)
+    DelMemberMessage(p0_2, member=p3.id)
+    relay.receive_messages()
+    relay.assert_group_consistency()
