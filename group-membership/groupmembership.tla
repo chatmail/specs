@@ -33,18 +33,14 @@ vars == <<members, queues, clock>>
 AllDevices ==
   Devices \union {Creator}
 
+(* Pairs of devices excluding pairs of devices with self. *)
+DevicePairs == { <<x, y>> \in AllDevices \X AllDevices : x # y }
+
 (* Member list is a function from a subset of devices
    to pairs of clock and a flag.
    If the flag is TRUE, the member is part of the group.
    If the flag is FALSE, it is a tombstone. *)
 MemberList == UNION { [D -> [timestamp: Clock, flag: BOOLEAN]] : D \in SUBSET AllDevices }
-
-(* Extracts members who are not tombstones from the member list. *)
-MemberSet(l) ==
-   {x \in DOMAIN l : l[x].flag }
-
-(* Pairs of devices excluding pairs of devices with self. *)
-DevicePairs == { <<x, y>> \in AllDevices \X AllDevices : x # y }
 
 TypeOK ==
   /\ members \in [AllDevices -> MemberList]
@@ -58,6 +54,20 @@ Init ==
   /\ queues = [pair \in DevicePairs |-> <<>>] \* All queues are empty.
   /\ clock = 0
 
+-----------------------------------------------------------------
+
+(* Extracts members who are not tombstones from the member list. *)
+MemberSet(l) ==
+   {x \in DOMAIN l : l[x].flag }
+
+(* True if device d thinks m is a chat member. *)
+IsMember(d, m) ==
+  /\ m \in DOMAIN members[d]
+  /\ members[d][m].flag
+
+EnabledDevices ==
+  {d \in AllDevices : IsMember(d, d)}
+
 ----------------------------------------------------------------------------
 
 SendMessage(sender, recipients) ==
@@ -65,11 +75,6 @@ SendMessage(sender, recipients) ==
              IF s = sender /\ r \in MemberSet(recipients)
              THEN Append(queues[s, r], members'[s])
              ELSE queues[s, r]]
-
-(* True if device d thinks m is a chat member. *)
-IsMember(d, m) ==
-  /\ m \in DOMAIN members[d]
-  /\ members[d][m].flag
 
 (* Device `d' sends a chat message. *)
 SendsChatMessage(d) ==
@@ -98,10 +103,7 @@ RemovesMember(d) ==
      /\ LET msg == members'[d]
         IN SendMessage(d, members[d])
 
-----------------------------------------------------------------------------
-
 (* Message reception logic, the main part of the protocol. *)
-
 ReceivesMessage(s, r) ==
   /\ queues[s, r] /= <<>>
   /\ queues' = [queues EXCEPT ![s, r] = Tail(@)]
@@ -128,9 +130,6 @@ Next ==
 Spec == Init /\ [][Next]_vars
 
 ----------------------------------------------------------------------------
-
-EnabledDevices ==
-  {d \in AllDevices : IsMember(d, d)}
 
 (* If both devices think they are in the chat,
    they must have the same memberlist
@@ -161,6 +160,8 @@ NoStaleMembers ==
   \A d1, d2 \in AllDevices :
   (~IsMember(d1, d1) /\ IsMember(d2, d2) => ~IsMember(d2, d1))
 
+----------------------------------------------------------------------------
+
 (* All devices which can chat keep chatting. *)
 MembersKeepChatting ==
   \A d \in AllDevices :
@@ -179,6 +180,8 @@ NoMembershipChanges ==
 EventuallyNoMembershipChanges ==
   <>[][NoMembershipChanges]_vars
 
+----------------------------------------------------------------------------
+
 (* If chat members keep chatting and eventually stop adding or removing members,
    then eventually group is always conistent. *)
 EventualConsistencyProperty ==
@@ -188,5 +191,26 @@ EventualConsistencyProperty ==
    /\ EventuallyNoMembershipChanges)
    => <>[]GroupConsistency
 
+(* This property does not hold because of the possibility to partition the group. *)
+StrongEventualConsistencyProperty ==
+  (/\ WF_vars(Next)
+   /\ MembersKeepChatting
+   /\ DevicesKeepReceiving
+   /\ EventuallyNoMembershipChanges)
+   => <>[]StrongGroupConsistency
+
+(* This property does not hold. *)
+NoStaleMembersProperty ==
+  (/\ WF_vars(Next)
+   /\ MembersKeepChatting
+   /\ DevicesKeepReceiving
+   /\ EventuallyNoMembershipChanges)
+   => <>[]NoStaleMembers
+
+----------------------------------------------------------------------------
+
+StateConstraint == \A <<x, y>> \in DevicePairs : Len(queues[x, y]) <= MaxQueue
+
+ClockConstraint == clock < MaxClock
 
 =============================================================================

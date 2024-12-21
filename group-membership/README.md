@@ -23,8 +23,17 @@ TLA+ model is stored in `groupmembership.tla`.
 Constraints are defined in the model instance stored in `MC.tla`
 and corresponding TLC configuration is in `MC.cfg`.
 
-The model can be checked using [TLC model checker](https://github.com/tlaplus/tlaplus)
-by running `tlc MC.tla`.
+The model can be checked using [TLC model checker](https://github.com/tlaplus/tlaplus).
+Run `tlc groupmembership.tla` to check eventual consistency.
+
+Run `tlc groupmembership.tla -config strong-eventual-consistency.cfg`
+to find counterexample to "strong eventual consistency" property,
+demonstrating the possibility to partition the group
+into disconnected islands.
+
+Run `tlc groupmembership.tla -config no-stale-members.cfg`
+to find counterexample to "no stale members" property,
+demonstrating the need for the ability to retry leaving the group.
 
 ## Assumptions
 
