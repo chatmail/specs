@@ -113,8 +113,9 @@ demonstrating the need for the ability to retry leaving the group.
 
 We want a protocol that results
 in all devices that think they are part of the member list
-to eventually converge to the same member list
-given the following conditions:
+to eventually converge to the same or disjoint member list
+(see Limitations below for why the same member list on all devices
+is not guaranteed) given the following conditions:
 
 1. All devices that think they are members of the group
    keep sending messages to the group.
@@ -136,7 +137,12 @@ given the following conditions:
    member list to some very old state if they decide
    to send a message, but this requirement is difficult to formalize.
 
-2. All devices eventually stop sending membership messages that change member list.
+2. All messages delivered to mailboxes
+   are eventually fetched by the devices.
+
+   No message remains the head of FIFO queue forever.
+
+3. All devices eventually stop adding and removing members.
 
 ### Immediate consistency
 
@@ -149,6 +155,8 @@ they have the same group memberlist.
 Less formally, as long as membership of some device is not modified,
 fetching all messages should be enough to get into state consistent
 with other similar devices.
+
+This property is tested in a simulation model.
 
 ## State transitions
 
@@ -179,36 +187,90 @@ The following state transitions can happen during the simulation:
 
 # Algorithm
 
-Each device maintains a logical clock for the chat.
-Clock value is initialized to 0.
+Each device maintains a member list
+as an LWW-element-Set[^1] CRDT.
 
-Current clock value is included in each message
-together with the new member list.
+Member list element consists of a timestamp
+and a boolean flag indicating whether the member is a current member
+or a past member.
 
-When device adds or removes a member,
-it increases the clock by 1 before sending the message.
+[^1]: <https://inria.hal.science/inria-00555588/document>
 
-When receiving a chat message,
-receiver compares its clock value
-with the message clock.
+When adding a member,
+device adds a new element with the flag set to true
+and the current timestamp,
+then sends out a message to all current members.
 
-If clock value in the message
-is higher than the receiver clock value,
-receiver sets the clock with the value from the message
-and replaces its local member list
-with the member list from the message.
+Wher removing a member,
+devices adds a new element with the flag set to false
+and the current timestamp,
+then sends out a message to all current members
+and removed member.
 
-If clock value in the message
-is lower than the receiver clock value,
-then the receier ignores the message
-and keeps its own clock value and member list.
+When receiving a message,
+client merges the received member list
+with its local member list.
+Timestamps in the received member list
+which appear to be in the future
+are corrected to the current timestamp.
+If timestamp is more than 60 days in the past,
+it is replaced with 0.
+Elements with the flag set to false
+and timestamp equal to 0 are removed
+to avoid keeping past members in the database
+indefinitely.
 
-If clock value in the message
-is the same as the receiver clock value,
-receiver updates its own member list
-with the member list from the message
-by taking an union of the member lists
-and increases its clock by 1.
+## Retry messages
 
-TODO: specify processing of "Member added"
-and "Member removed" messages.
+If device keeps receiving messages
+while thinking that it is not part of the group,
+it should collect the list of the senders
+of messages and allow the user
+to send a message with its current
+member list back to the sender.
+
+This needs to prevent the following scenario:
+1. Alice creates a new chat.
+2. Alice adds Bob.
+3. Bob receives "Alice added Bob" from Alice.
+4. Alice removes Bob.
+5. Alice leaves the chat.
+6. Bob adds Carol.
+7. Carol receives "Member added" from Bob.
+8. Bob receives "Alice removes Bob" from Alice.
+
+Now Carol spams Alice and Bob forever
+while Alice and Bob think they are not part of the group.
+Alice and Bob should be able to send the retry message back.
+
+Without such retry messages
+eventual consistency property does not hold
+as well because of the following scenario with five devices:
+1. Alice and Bob are in the chat.
+2. Alice adds Carol and Ellie and removes Bob.
+3. Bob adds Dave and Ellie and removes Alice.
+4. Ellie receives everything and leaves.
+5. Everyone receives everything.
+
+Now Carol thinks that group has {Carol, Alice, Ellie},
+Dave thinks group has {Dave, Bob, Ellie} and everyone else think they have left the group.
+So Carol and Dave are in the group but do not have disjoint sets.
+
+# Limitations
+
+## Partitioning
+
+It is possible to partition the group as in this scenario:
+1. Alice and Bob are both in the group.
+2. Alice and Bob go offline.
+3. Alice adds Carol and removes Bob from the chat.
+4. Bob adds Dave and removes Alice from the chat.
+5. Alice and Bob go online.
+6. Everyone (Alice, Bob, Carol and Dave) receive messages.
+
+Now Carol thinks that group consists of Alice and Carol,
+Dave thinks that group consists of Bob and Dave,
+Alice and Bob think they are not in the chat.
+
+Because the only members who think they are in the group (Carol and Dave)
+have disjoint member lists
