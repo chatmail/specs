@@ -274,3 +274,14 @@ Alice and Bob think they are not in the chat.
 
 Because the only members who think they are in the group (Carol and Dave)
 have disjoint member lists
+
+## Devices may keep sending messages after being removed
+
+This does not happen under "reliable FIFO channel" assumptions,
+but if messages may be lost, then it is possible that some user is removed
+but failed to receive a "Member removed" message.
+They can then keep sending messages into the group
+without anyone being able to send the message back
+and update such device with the info that it is removed.
+Workaround is to add the device
+and remove it again.
