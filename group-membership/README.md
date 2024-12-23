@@ -285,3 +285,18 @@ without anyone being able to send the message back
 and update such device with the info that it is removed.
 Workaround is to add the device
 and remove it again.
+
+## Reliance on synchronized clocks
+
+If device clocks are not synchronized,
+they may incorrectly treat timestamps
+as received from the future and adjust them
+or send timestamps that are in the past
+and not effective, failing to add or remove members
+if their clock is in the past.
+
+If device detects that local member list
+has timestamps from the future,
+then it is an indication that clock
+has been rewinded and user may be notified
+to fix the clock.
