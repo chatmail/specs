@@ -131,13 +131,35 @@ Spec == Init /\ [][Next]_vars
 
 ----------------------------------------------------------------------------
 
+(* Weak group consistency that holds without retry messages.
+   Retry messages are not implemented in this model,
+   so we test this property. *)
+WeakGroupConsistency ==
+  \A d1, d2 \in AllDevices :
+  \/ ~IsMember(d1, d1)
+  \/ ~IsMember(d2, d2)
+  \/ IsMember(d1, d2) = IsMember(d2, d1)
+
 (* If both devices think they are in the chat,
    they must have the same memberlist
    or disjoint memberlist.
 
    We want to have this property eventually
    if devices stop adding and removing members,
-   but it does not hold at all times. *)
+   but it does not hold at all times.
+
+   This does not hold without retry messages if we have 5 devices.
+
+1. Alice and Bob are in the chat.
+2. Alice adds Carol and Ellie and removes Bob.
+3. Bob adds Dave and Ellie and removes Alice.
+4. Ellie receives everything and leaves.
+5. Everyone receives everything.
+
+Now Carol thinks that group has {Carol, Alice, Ellie},
+Dave thinks group has {Dave, Bob, Ellie} and everyone else think they have left the group.
+So Carol and Dave are in the group but do not have disjoint sets.
+*)
 GroupConsistency ==
   \A d1, d2 \in EnabledDevices :
   \/ members[d1] = members[d2] \* Also checks that clocks are the same.
@@ -189,7 +211,7 @@ EventualConsistencyProperty ==
    /\ MembersKeepChatting
    /\ DevicesKeepReceiving
    /\ EventuallyNoMembershipChanges)
-   => <>[]GroupConsistency
+   => <>[]WeakGroupConsistency
 
 (* This property does not hold because of the possibility to partition the group. *)
 StrongEventualConsistencyProperty ==
