@@ -103,25 +103,6 @@ RemovesMember(d) ==
      /\ LET msg == members'[d]
         IN SendMessage(d, members[d])
 
-(* Timestamp since which `m' is not a member
-   from `d' point of view.
-
-   Future timestamp is returned if `m' is a member or `d' itself is not a member.
-
-   Only changes with timestamp lower than this value from `m' should be accepted.
-   This prevents the member from restoring old backup
-   where they think they are still a member and making changes to the group
-   unless they also modify their clock and backdate the change.
-   *)
-RemovalTimestamp(d, m) ==
-  IF ~IsMember(d, d)
-  THEN clock
-  ELSE IF m \notin DOMAIN members[d]
-  THEN 0
-  ELSE IF members[d][m].flag
-  THEN clock + 1 (* m is currently a member *)
-  ELSE members[d][m].timestamp (* m was removed at this time *)
-
 (* Message reception logic, the main part of the protocol. *)
 ReceivesMessage(s, r) ==
   /\ queues[s, r] /= <<>>
@@ -132,7 +113,7 @@ ReceivesMessage(s, r) ==
                        [x \in (DOMAIN @ \cup DOMAIN msg) |->
                         IF x \notin DOMAIN @
                         THEN msg[x]
-                        ELSE IF x \in DOMAIN msg /\ msg[x].timestamp > @[x].timestamp /\ msg[x].timestamp < RemovalTimestamp(r, s)
+                        ELSE IF x \in DOMAIN msg /\ msg[x].timestamp > @[x].timestamp
                         THEN msg[x]
                         ELSE @[x]]]
 
