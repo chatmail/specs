@@ -300,3 +300,25 @@ has timestamps from the future,
 then it is an indication that clock
 has been rewinded and user may be notified
 to fix the clock.
+
+## Non-members who know group ID can add themselves back
+
+If we try to protect against this
+by ignoring messages from non-members
+when we think we are members, then
+eventual consistency does not hold as the following scenario is possible:
+
+1. Alice is in chat.
+2. Alice adds Bob.
+3. Bob receives "Member added" from Alice.
+4. Alice removes Bob.
+5. Bob removes Alice.
+6. Alice receives "Bob removed Alice" from Bob and ignores it.
+7. Bob receives "Alice removed Bob" from Alice and ignores it.
+
+Now both Alice and Bob think they are the only member of the group.
+
+8. Bob adds Alice.
+9. Alice receives "Bob adds Alice" and ignores it.
+
+Then Bob keeps sending chat messages to Alice and Alice keeps ignoring them.
